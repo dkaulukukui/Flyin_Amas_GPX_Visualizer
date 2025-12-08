@@ -903,32 +903,18 @@
 
           compositeCanvasRef.current = compositeCanvas;
 
-          // Function to draw all layers onto the composite
+          // Function to draw canvas layers only (avoids CORS issues)
           const drawComposite = () => {
             if (!compositeCanvasRef.current || !isRecordingRef.current) return;
 
             const ctx = compositeCanvasRef.current.getContext('2d');
             const mapRect = mapContainer.getBoundingClientRect();
 
-            // Clear canvas
-            ctx.clearRect(0, 0, compositeCanvas.width, compositeCanvas.height);
+            // Clear canvas with a dark background
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fillRect(0, 0, compositeCanvas.width, compositeCanvas.height);
 
-            // 1. Draw tile images (background map)
-            const tileImages = Array.from(mapContainer.querySelectorAll('.leaflet-tile-pane img'));
-            tileImages.forEach(img => {
-              if (img.complete && img.naturalWidth > 0) {
-                try {
-                  const rect = img.getBoundingClientRect();
-                  const offsetX = rect.left - mapRect.left;
-                  const offsetY = rect.top - mapRect.top;
-                  ctx.drawImage(img, offsetX, offsetY, rect.width, rect.height);
-                } catch (e) {
-                  console.warn('Could not draw tile image:', e);
-                }
-              }
-            });
-
-            // 2. Draw canvas layers (tracks, markers)
+            // Draw all Leaflet canvas layers (tracks, markers, labels)
             const currentCanvases = Array.from(mapContainer.querySelectorAll('canvas'));
             currentCanvases.forEach(canvas => {
               if (canvas.width > 0 && canvas.height > 0) {
@@ -942,78 +928,6 @@
                 }
               }
             });
-
-            // 3. Draw track labels
-            const labels = Array.from(mapContainer.querySelectorAll('.map-label'));
-            labels.forEach(label => {
-              try {
-                const rect = label.getBoundingClientRect();
-                const text = label.textContent;
-                const color = label.style.color || '#ffffff';
-                const offsetX = rect.left - mapRect.left;
-                const offsetY = rect.top - mapRect.top;
-
-                ctx.font = '700 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-                ctx.fillStyle = color;
-                ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
-                ctx.lineWidth = 4;
-                ctx.lineJoin = 'round';
-                ctx.strokeText(text, offsetX, offsetY + 14);
-                ctx.fillText(text, offsetX, offsetY + 14);
-              } catch (e) {
-                console.warn('Could not draw label:', e);
-              }
-            });
-
-            // 4. Draw legend if visible
-            if (showLegend) {
-              const legend = mapContainer.querySelector('.map-legend');
-              if (legend) {
-                try {
-                  const rect = legend.getBoundingClientRect();
-                  const offsetX = rect.left - mapRect.left;
-                  const offsetY = rect.top - mapRect.top;
-
-                  // Draw legend background
-                  ctx.fillStyle = 'rgba(45, 45, 45, 0.95)';
-                  ctx.fillRect(offsetX, offsetY, rect.width, rect.height);
-
-                  // Draw legend border
-                  ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
-                  ctx.lineWidth = 1;
-                  ctx.strokeRect(offsetX, offsetY, rect.width, rect.height);
-
-                  // Draw legend title
-                  ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-                  ctx.fillStyle = '#999';
-                  ctx.fillText('TRACKS', offsetX + 15, offsetY + 25);
-
-                  // Draw legend items
-                  const legendItems = Array.from(legend.querySelectorAll('.legend-item'));
-                  legendItems.forEach((item, idx) => {
-                    const colorBar = item.querySelector('.legend-color');
-                    const labelText = item.querySelector('.legend-label');
-
-                    if (colorBar && labelText) {
-                      const color = colorBar.style.backgroundColor;
-                      const text = labelText.textContent;
-                      const itemY = offsetY + 45 + (idx * 25);
-
-                      // Draw color bar
-                      ctx.fillStyle = color;
-                      ctx.fillRect(offsetX + 15, itemY - 5, 20, 3);
-
-                      // Draw label text
-                      ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-                      ctx.fillStyle = '#ffffff';
-                      ctx.fillText(text, offsetX + 45, itemY);
-                    }
-                  });
-                } catch (e) {
-                  console.warn('Could not draw legend:', e);
-                }
-              }
-            }
 
             // Continue drawing while recording
             if (compositeCanvasRef.current && isRecordingRef.current) {
@@ -1322,7 +1236,7 @@
                         {isRecording ? '⏹ Stop Export' : '🎥 Export Video'}
                       </button>
                       <p style={{ fontSize: '11px', color: '#999', marginTop: '8px' }}>
-                        Export will auto-play the animation and save as WebM video. To convert to MP4, use VLC or HandBrake.
+                        Exports animated tracks on dark background as WebM. For full map background, use screen recording.
                       </p>
                     </div>
                   </div>

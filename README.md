@@ -42,9 +42,15 @@ Visit: [https://yourusername.github.io/Flyin_Amas_GPX_Visializer/](https://youru
 ### Video Export
 
 Click "Export Video" to record your animation. The video will:
-- Capture the animated tracks
+- Capture the animated tracks and markers on a dark background
 - Save as WebM format (widely supported)
 - Can be converted to MP4 using VLC or HandBrake if needed
+
+**Note:** Due to browser security (CORS), the background map tiles are not included in exports. For videos with the full map background, use screen recording tools like:
+- **Chrome/Edge**: Built-in screen recorder (Extensions → Screen Recorder)
+- **OBS Studio**: Free, powerful screen recording
+- **macOS**: QuickTime Player (File → New Screen Recording)
+- **Windows**: Xbox Game Bar (Win + G)
 
 ## Deployment
 
