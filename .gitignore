@@ -1,0 +1,23 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*~
+
+# GPX files (user data - don't commit)
+*.gpx
+
+# Video exports
+*.webm
+*.mp4
