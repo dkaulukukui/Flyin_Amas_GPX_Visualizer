@@ -32,17 +32,34 @@
       background: #2d2d2d;
       padding: 20px;
       border-bottom: 2px solid #fc4c02;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
     }
-    
+
+    .header-content {
+      flex: 1;
+    }
+
     .header h1 {
       font-size: 24px;
       color: #fc4c02;
       margin-bottom: 5px;
     }
-    
+
     .header p {
       color: #999;
       font-size: 14px;
+    }
+
+    .version {
+      color: #666;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 8px;
+      background: #1a1a1a;
+      border-radius: 4px;
+      white-space: nowrap;
     }
     
     .main-container {
@@ -511,6 +528,13 @@
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
+    // VERSION: Increment this with every change (major.minor.patch)
+    // Change log:
+    // 1.2.1 - Optimized video rendering frame rate, added version number display
+    // 1.2.0 - Added frame-by-frame rendering with tile loading
+    // 1.1.0 - Added export settings and improved video quality
+    const APP_VERSION = "1.2.1";
+
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
       const [isPlaying, setIsPlaying] = useState(false);
@@ -977,19 +1001,29 @@
       const renderCancelledRef = useRef(false);
 
       // Helper function to wait for tiles to load
-      const waitForTilesToLoad = async (mapContainer, maxWaitTime = 2000) => {
+      const waitForTilesToLoad = async (mapContainer, maxWaitTime = 500) => {
+        const tileImages = Array.from(mapContainer.querySelectorAll('.leaflet-tile-pane img'));
+        const loadingTiles = tileImages.filter(img => !img.complete || img.naturalWidth === 0);
+
+        // If all tiles already loaded, just wait briefly for render settle
+        if (loadingTiles.length === 0) {
+          await new Promise(resolve => setTimeout(resolve, 16));
+          return true;
+        }
+
+        // Otherwise wait for tiles to load
         const startTime = Date.now();
         while (Date.now() - startTime < maxWaitTime) {
-          const tileImages = Array.from(mapContainer.querySelectorAll('.leaflet-tile-pane img'));
-          const loadingTiles = tileImages.filter(img => !img.complete || img.naturalWidth === 0);
+          const currentTileImages = Array.from(mapContainer.querySelectorAll('.leaflet-tile-pane img'));
+          const currentLoadingTiles = currentTileImages.filter(img => !img.complete || img.naturalWidth === 0);
 
-          if (loadingTiles.length === 0) {
-            // All tiles loaded, wait a bit more for rendering to settle
-            await new Promise(resolve => setTimeout(resolve, 200));
+          if (currentLoadingTiles.length === 0) {
+            // All tiles loaded, wait briefly for rendering to settle
+            await new Promise(resolve => setTimeout(resolve, 50));
             return true;
           }
 
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => setTimeout(resolve, 50));
         }
         return false; // Timeout
       };
@@ -1224,7 +1258,6 @@
 
           // Frame-by-frame rendering
           const totalFrames = 300; // 10 seconds at 30 FPS
-          const frameInterval = 1000 / targetFPS;
 
           for (let frame = 0; frame <= totalFrames; frame++) {
             if (renderCancelledRef.current) {
@@ -1235,17 +1268,17 @@
             setProgress(progressValue);
             setRenderProgress(progressValue);
 
-            // Wait for React to update and render
-            await new Promise(resolve => setTimeout(resolve, 50));
+            // Wait for React to update and render (one frame at 60fps)
+            await new Promise(resolve => requestAnimationFrame(resolve));
 
-            // Wait for tiles to load
-            await waitForTilesToLoad(mapContainer, 2000);
+            // Wait for tiles to load (optimized - fast return if already loaded)
+            await waitForTilesToLoad(mapContainer, 500);
 
             // Capture frame
             captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight);
 
-            // Wait for frame interval
-            await new Promise(resolve => setTimeout(resolve, frameInterval));
+            // Small delay to ensure canvas stream captures the frame
+            await new Promise(resolve => setTimeout(resolve, 10));
           }
 
           // Stop recording
@@ -1307,8 +1340,11 @@
       return (
         <>
           <div className="header">
-            <h1>🗺️ Flyin Amas GPX Track Animator</h1>
-            <p>Upload your GPX files and create animated track videos</p>
+            <div className="header-content">
+              <h1>🗺️ Flyin Amas GPX Track Animator</h1>
+              <p>Upload your GPX files and create animated track videos</p>
+            </div>
+            <div className="version">v{APP_VERSION}</div>
           </div>
           
           <div className="main-container">
