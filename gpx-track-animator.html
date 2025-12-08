@@ -429,7 +429,10 @@
       const [isRecording, setIsRecording] = useState(false);
       const [showAllTracks, setShowAllTracks] = useState(true);
       const [showLabels, setShowLabels] = useState(true);
-      const [animationStyle, setAnimationStyle] = useState('sequential');
+      const [showLegend, setShowLegend] = useState(true);
+      const [animationStyle, setAnimationStyle] = useState('simultaneous');
+      const [zoomToTrack, setZoomToTrack] = useState(false);
+      const [zoomLevel, setZoomLevel] = useState(16);
       const [dragOver, setDragOver] = useState(false);
       
       const mapRef = useRef(null);
@@ -438,6 +441,7 @@
       const polylineRefs = useRef([]);
       const mediaRecorderRef = useRef(null);
       const recordedChunksRef = useRef([]);
+      const originalBoundsRef = useRef(null);
 
       useEffect(() => {
         // Initialize map
@@ -562,6 +566,19 @@
         }
       }, [isPlaying, speed]);
 
+      // Store original bounds when tracks change
+      useEffect(() => {
+        if (tracks.length > 0 && mapInstanceRef.current) {
+          const allPoints = [];
+          tracks.forEach(track => {
+            allPoints.push(...track.points.map(p => [p.lat, p.lon]));
+          });
+          if (allPoints.length > 0) {
+            originalBoundsRef.current = L.latLngBounds(allPoints);
+          }
+        }
+      }, [tracks]);
+
       useEffect(() => {
         // Clear existing polylines
         polylineRefs.current.forEach(line => {
@@ -635,7 +652,56 @@
             }
           }
         });
-      }, [tracks, progress, showAllTracks, showLabels, animationStyle]);
+
+        // Handle zoom to track
+        if (zoomToTrack && progress > 0 && progress < 100) {
+          // Collect all current positions
+          const currentPositions = [];
+          tracks.forEach((track, trackIndex) => {
+            let visiblePoints;
+
+            if (animationStyle === 'sequential') {
+              const tracksBeforeThis = tracks.slice(0, trackIndex);
+              const totalPointsBefore = tracksBeforeThis.reduce((sum, t) => sum + t.points.length, 0);
+              const totalPoints = tracks.reduce((sum, t) => sum + t.points.length, 0);
+              const currentTotalPoint = Math.floor((progress / 100) * totalPoints);
+              const pointsForThisTrack = Math.max(0, currentTotalPoint - totalPointsBefore);
+              visiblePoints = track.points.slice(0, Math.min(pointsForThisTrack, track.points.length));
+            } else {
+              const pointCount = Math.floor((progress / 100) * track.points.length);
+              visiblePoints = track.points.slice(0, pointCount);
+            }
+
+            if (visiblePoints.length > 0) {
+              const lastPoint = visiblePoints[visiblePoints.length - 1];
+              currentPositions.push([lastPoint.lat, lastPoint.lon]);
+            }
+          });
+
+          if (currentPositions.length > 0) {
+            if (currentPositions.length === 1) {
+              mapInstanceRef.current.setView(currentPositions[0], zoomLevel, { animate: true, duration: 0.3 });
+            } else {
+              const bounds = L.latLngBounds(currentPositions);
+              mapInstanceRef.current.fitBounds(bounds, {
+                padding: [100, 100],
+                maxZoom: zoomLevel,
+                animate: true,
+                duration: 0.3
+              });
+            }
+          }
+        } else if (progress === 0 || progress >= 100) {
+          // Zoom out to show all tracks
+          if (tracks.length > 0 && originalBoundsRef.current) {
+            mapInstanceRef.current.fitBounds(originalBoundsRef.current, {
+              padding: [50, 50],
+              animate: true,
+              duration: 0.5
+            });
+          }
+        }
+      }, [tracks, progress, showAllTracks, showLabels, animationStyle, zoomToTrack, zoomLevel]);
 
       const togglePlay = () => {
         if (tracks.length === 0) return;
@@ -861,6 +927,45 @@
                         <span>Show track labels</span>
                       </label>
                     </div>
+
+                    <div className="control-group">
+                      <label className="checkbox-group">
+                        <input
+                          type="checkbox"
+                          className="checkbox"
+                          checked={showLegend}
+                          onChange={(e) => setShowLegend(e.target.checked)}
+                        />
+                        <span>Show legend</span>
+                      </label>
+                    </div>
+
+                    <div className="control-group">
+                      <label className="checkbox-group">
+                        <input
+                          type="checkbox"
+                          className="checkbox"
+                          checked={zoomToTrack}
+                          onChange={(e) => setZoomToTrack(e.target.checked)}
+                        />
+                        <span>Zoom to track during playback</span>
+                      </label>
+                    </div>
+
+                    {zoomToTrack && (
+                      <div className="control-group">
+                        <div className="control-label">Zoom Level: {zoomLevel}</div>
+                        <input
+                          type="range"
+                          className="slider"
+                          min="12"
+                          max="18"
+                          step="1"
+                          value={zoomLevel}
+                          onChange={(e) => setZoomLevel(parseInt(e.target.value))}
+                        />
+                      </div>
+                    )}
                   </div>
                   
                   <div className="controls">
@@ -904,7 +1009,7 @@
                   RECORDING
                 </div>
               )}
-              {tracks.length > 0 && (
+              {tracks.length > 0 && showLegend && (
                 <div className="map-legend">
                   <div className="legend-title">Tracks</div>
                   {tracks.map(track => (
