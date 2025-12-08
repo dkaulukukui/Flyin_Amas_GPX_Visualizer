@@ -530,12 +530,14 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 1.4.1 - Fix legend rendering in exported video, optimize frame timing (1000ms + fast polling), show title in browser view
+    // 1.4.0 - Added customizable video title with positioning/font/color controls, changed track labels to Track 1/2/3, auto-populate title from first track date
     // 1.3.2 - Resize map container to export resolution for native tile quality, increase tile wait to 2000ms, fix frame rate consistency
     // 1.3.0 - Added quality and FPS controls, improved bitrate calculation, manual frame capture
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "1.3.2";
+    const APP_VERSION = "1.4.1";
 
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
@@ -556,6 +558,11 @@
       const [exportFPS, setExportFPS] = useState(30);
       const [isRendering, setIsRendering] = useState(false);
       const [renderProgress, setRenderProgress] = useState(0);
+      const [videoTitle, setVideoTitle] = useState('');
+      const [titlePosition, setTitlePosition] = useState('top-left');
+      const [titleSize, setTitleSize] = useState(24);
+      const [titleFont, setTitleFont] = useState('Arial');
+      const [titleColor, setTitleColor] = useState('#ffffff');
       
       const mapRef = useRef(null);
       const mapInstanceRef = useRef(null);
@@ -645,7 +652,7 @@
         return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
       };
 
-      const parseGPX = (text, filename) => {
+      const parseGPX = (text, filename, trackNumber) => {
         const parser = new DOMParser();
         const doc = parser.parseFromString(text, 'text/xml');
         const points = [];
@@ -658,16 +665,13 @@
           points.push({ lat, lon, time });
         });
 
-        // Extract date from first point if available
-        let defaultLabel = filename.replace('.gpx', '');
+        // Use track number for label
+        const defaultLabel = `Track ${trackNumber}`;
         let startTime = null;
         let endTime = null;
         let duration = null;
 
         if (points.length > 0 && points[0].time) {
-          const date = new Date(points[0].time);
-          defaultLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-
           // Calculate duration if time data is available
           startTime = new Date(points[0].time);
           endTime = new Date(points[points.length - 1].time);
@@ -691,10 +695,21 @@
           if (file.name.endsWith('.gpx')) {
             const reader = new FileReader();
             reader.onload = (e) => {
-              const track = parseGPX(e.target.result, file.name);
-              setTracks(prev => [...prev, track]);
-              
+              setTracks(prev => {
+                const trackNumber = prev.length + 1;
+                const track = parseGPX(e.target.result, file.name, trackNumber);
+
+                // Auto-populate title with date from first track
+                if (prev.length === 0 && track.startTime && !videoTitle) {
+                  const date = new Date(track.startTime);
+                  setVideoTitle(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+                }
+
+                return [...prev, track];
+              });
+
               // Fit map to bounds
+              const track = parseGPX(e.target.result, file.name, tracks.length + 1);
               if (track.points.length > 0) {
                 const bounds = L.latLngBounds(
                   track.points.map(p => [p.lat, p.lon])
@@ -1016,7 +1031,7 @@
           return true;
         }
 
-        // Otherwise wait for tiles to load
+        // Otherwise wait for tiles to load with faster polling
         const startTime = Date.now();
         while (Date.now() - startTime < maxWaitTime) {
           const currentTileImages = Array.from(mapContainer.querySelectorAll('.leaflet-tile-pane img'));
@@ -1024,17 +1039,18 @@
 
           if (currentLoadingTiles.length === 0) {
             // All tiles loaded, wait briefly for rendering to settle
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await new Promise(resolve => setTimeout(resolve, 30));
             return true;
           }
 
-          await new Promise(resolve => setTimeout(resolve, 50));
+          // Poll more frequently (16ms instead of 50ms) for faster response
+          await new Promise(resolve => setTimeout(resolve, 16));
         }
         return false; // Timeout
       };
 
       // Function to capture a single frame
-      const captureFrame = (mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight) => {
+      const captureFrame = (mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, titleText, titlePos, titleFontSize, titleFontFamily, titleTextColor, shouldShowLegend, currentTracks) => {
         const ctx = compositeCanvas.getContext('2d');
         const currentMapRect = mapContainer.getBoundingClientRect();
 
@@ -1109,53 +1125,108 @@
         });
 
         // 4. Draw legend if visible
-        if (showLegend) {
-          const legend = document.querySelector('.map-legend');
-          if (legend) {
-            try {
-              const legendRect = legend.getBoundingClientRect();
-              const legendOffsetX = legendRect.left - currentMapRect.left;
-              const legendOffsetY = legendRect.top - currentMapRect.top;
+        if (shouldShowLegend && currentTracks && currentTracks.length > 0) {
+          try {
+            // Calculate legend dimensions
+            const legendWidth = 200;
+            const legendHeight = 40 + (currentTracks.length * 25) + 15;
+            const legendX = 20;
+            const legendY = 20;
 
-              // Draw legend background
-              ctx.fillStyle = 'rgba(45, 45, 45, 0.95)';
-              ctx.fillRect(legendOffsetX, legendOffsetY, legendRect.width, legendRect.height);
+            // Draw legend background
+            ctx.fillStyle = 'rgba(45, 45, 45, 0.95)';
+            ctx.fillRect(legendX, legendY, legendWidth, legendHeight);
 
-              // Draw legend border
-              ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
-              ctx.lineWidth = 1;
-              ctx.strokeRect(legendOffsetX, legendOffsetY, legendRect.width, legendRect.height);
+            // Draw legend border
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(legendX, legendY, legendWidth, legendHeight);
 
-              // Draw legend title
-              ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-              ctx.fillStyle = '#999';
-              ctx.textAlign = 'left';
-              ctx.fillText('TRACKS', legendOffsetX + 15, legendOffsetY + 25);
+            // Draw legend title
+            ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillStyle = '#999';
+            ctx.textAlign = 'left';
+            ctx.fillText('TRACKS', legendX + 15, legendY + 25);
 
-              // Draw legend items
-              const legendItems = Array.from(legend.querySelectorAll('.legend-item'));
-              legendItems.forEach((item, idx) => {
-                const colorBar = item.querySelector('.legend-color');
-                const labelText = item.querySelector('.legend-label');
+            // Draw legend items from tracks data
+            currentTracks.forEach((track, idx) => {
+              const itemY = legendY + 45 + (idx * 25);
 
-                if (colorBar && labelText) {
-                  const color = colorBar.style.backgroundColor;
-                  const text = labelText.textContent;
-                  const itemY = legendOffsetY + 45 + (idx * 25);
+              // Draw color bar
+              ctx.fillStyle = track.color;
+              ctx.fillRect(legendX + 15, itemY - 5, 20, 3);
 
-                  // Draw color bar
-                  ctx.fillStyle = color;
-                  ctx.fillRect(legendOffsetX + 15, itemY - 5, 20, 3);
+              // Draw label text
+              ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+              ctx.fillStyle = '#ffffff';
+              ctx.fillText(track.label, legendX + 45, itemY);
+            });
+          } catch (e) {
+            console.warn('Could not draw legend:', e);
+          }
+        }
 
-                  // Draw label text
-                  ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-                  ctx.fillStyle = '#ffffff';
-                  ctx.fillText(text, legendOffsetX + 45, itemY);
-                }
-              });
-            } catch (e) {
-              console.warn('Could not draw legend:', e);
+        // 5. Draw video title if present
+        if (titleText && titleText.trim() !== '') {
+          try {
+            const padding = 30; // Padding from edges
+            ctx.font = `700 ${titleFontSize}px ${titleFontFamily}`;
+            ctx.fillStyle = titleTextColor;
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+            ctx.lineWidth = Math.max(4, titleFontSize / 6);
+            ctx.lineJoin = 'round';
+            ctx.textBaseline = 'top';
+
+            // Measure text for positioning
+            const textMetrics = ctx.measureText(titleText);
+            const textWidth = textMetrics.width;
+            const textHeight = titleFontSize;
+
+            let x, y;
+
+            // Calculate position based on titlePos
+            switch (titlePos) {
+              case 'top-left':
+                x = padding;
+                y = padding;
+                ctx.textAlign = 'left';
+                break;
+              case 'top-center':
+                x = sourceWidth / 2;
+                y = padding;
+                ctx.textAlign = 'center';
+                break;
+              case 'top-right':
+                x = sourceWidth - padding;
+                y = padding;
+                ctx.textAlign = 'right';
+                break;
+              case 'bottom-left':
+                x = padding;
+                y = sourceHeight - padding - textHeight;
+                ctx.textAlign = 'left';
+                break;
+              case 'bottom-center':
+                x = sourceWidth / 2;
+                y = sourceHeight - padding - textHeight;
+                ctx.textAlign = 'center';
+                break;
+              case 'bottom-right':
+                x = sourceWidth - padding;
+                y = sourceHeight - padding - textHeight;
+                ctx.textAlign = 'right';
+                break;
+              default:
+                x = padding;
+                y = padding;
+                ctx.textAlign = 'left';
             }
+
+            // Draw text with outline
+            ctx.strokeText(titleText, x, y);
+            ctx.fillText(titleText, x, y);
+          } catch (e) {
+            console.warn('Could not draw title:', e);
           }
         }
 
@@ -1192,7 +1263,7 @@
 
           // Wait for tiles to load at export resolution
           await new Promise(resolve => setTimeout(resolve, 100));
-          await waitForTilesToLoad(mapContainer, 2000);
+          await waitForTilesToLoad(mapContainer, 1000);
 
           // Now map is at export resolution with native tiles loaded
           const sourceWidth = exportWidth;
@@ -1324,11 +1395,11 @@
             // Wait for React to update and render
             await new Promise(resolve => requestAnimationFrame(resolve));
 
-            // Wait for tiles to load (increased to 2000ms for better quality)
-            await waitForTilesToLoad(mapContainer, 2000);
+            // Wait for tiles to load (1000ms with fast polling for quality + consistency)
+            await waitForTilesToLoad(mapContainer, 1000);
 
             // Capture frame to canvas
-            captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight);
+            captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks);
 
             // Manually request frame from stream (for captureStream(0) mode)
             if (videoTrack && videoTrack.requestFrame) {
@@ -1653,6 +1724,76 @@
                           <option value="60">60 FPS (Smooth)</option>
                         </select>
                       </div>
+
+                      <div className="control-label" style={{ marginTop: '20px' }}>Video Title</div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Title Text</label>
+                        <input
+                          type="text"
+                          className="select"
+                          value={videoTitle}
+                          onChange={(e) => setVideoTitle(e.target.value)}
+                          placeholder="Enter title (optional)"
+                          disabled={isRecording}
+                          style={{ width: '100%', fontFamily: 'inherit' }}
+                        />
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Position</label>
+                        <select
+                          className="select"
+                          value={titlePosition}
+                          onChange={(e) => setTitlePosition(e.target.value)}
+                          disabled={isRecording}
+                        >
+                          <option value="top-left">Top Left</option>
+                          <option value="top-center">Top Center</option>
+                          <option value="top-right">Top Right</option>
+                          <option value="bottom-left">Bottom Left</option>
+                          <option value="bottom-center">Bottom Center</option>
+                          <option value="bottom-right">Bottom Right</option>
+                        </select>
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Font Size: {titleSize}px</label>
+                        <input
+                          type="range"
+                          min="16"
+                          max="72"
+                          step="2"
+                          value={titleSize}
+                          onChange={(e) => setTitleSize(parseInt(e.target.value))}
+                          disabled={isRecording}
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Font</label>
+                        <select
+                          className="select"
+                          value={titleFont}
+                          onChange={(e) => setTitleFont(e.target.value)}
+                          disabled={isRecording}
+                        >
+                          <option value="Arial">Arial</option>
+                          <option value="Helvetica">Helvetica</option>
+                          <option value="Georgia">Georgia</option>
+                          <option value="Times New Roman">Times New Roman</option>
+                          <option value="Courier New">Courier New</option>
+                          <option value="Verdana">Verdana</option>
+                        </select>
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Color</label>
+                        <input
+                          type="color"
+                          value={titleColor}
+                          onChange={(e) => setTitleColor(e.target.value)}
+                          disabled={isRecording}
+                          style={{ width: '100%', height: '32px', cursor: 'pointer' }}
+                        />
+                      </div>
+
                       <button
                         className="btn btn-primary"
                         onClick={isRecording ? stopRecording : startRecording}
@@ -1743,6 +1884,36 @@
                       <div className="legend-label">{track.label}</div>
                     </div>
                   ))}
+                </div>
+              )}
+              {videoTitle && videoTitle.trim() !== '' && (
+                <div
+                  className="map-title"
+                  style={{
+                    position: 'absolute',
+                    ...(() => {
+                      const padding = '30px';
+                      const positions = {
+                        'top-left': { top: padding, left: padding },
+                        'top-center': { top: padding, left: '50%', transform: 'translateX(-50%)' },
+                        'top-right': { top: padding, right: padding },
+                        'bottom-left': { bottom: padding, left: padding },
+                        'bottom-center': { bottom: padding, left: '50%', transform: 'translateX(-50%)' },
+                        'bottom-right': { bottom: padding, right: padding }
+                      };
+                      return positions[titlePosition] || positions['top-left'];
+                    })(),
+                    fontSize: `${titleSize}px`,
+                    fontFamily: titleFont,
+                    color: titleColor,
+                    fontWeight: '700',
+                    textShadow: '2px 2px 4px rgba(0, 0, 0, 0.9), -1px -1px 2px rgba(0, 0, 0, 0.9), 1px -1px 2px rgba(0, 0, 0, 0.9), -1px 1px 2px rgba(0, 0, 0, 0.9)',
+                    pointerEvents: 'none',
+                    zIndex: 1000,
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {videoTitle}
                 </div>
               )}
               <div id="map" ref={mapRef}></div>
