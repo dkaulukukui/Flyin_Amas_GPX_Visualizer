@@ -530,7 +530,7 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
-    // 1.3.2 - Resize map container to export resolution for native tile quality, increase tile wait to 2000ms
+    // 1.3.2 - Resize map container to export resolution for native tile quality, increase tile wait to 2000ms, fix frame rate consistency
     // 1.3.0 - Added quality and FPS controls, improved bitrate calculation, manual frame capture
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
@@ -547,7 +547,7 @@
       const [showLabels, setShowLabels] = useState(true);
       const [showLegend, setShowLegend] = useState(true);
       const [animationStyle, setAnimationStyle] = useState('simultaneous');
-      const [zoomToTrack, setZoomToTrack] = useState(false);
+      const [zoomToTrack, setZoomToTrack] = useState(true);
       const [zoomLevel, setZoomLevel] = useState(15);
       const [dragOver, setDragOver] = useState(false);
       const [exportAspectRatio, setExportAspectRatio] = useState('16:9');
@@ -1230,8 +1230,8 @@
           const bitsPerPixelFrame = qualityPresets[exportQuality] || qualityPresets['high'];
           const targetBitrate = Math.round(pixelCount * targetFPS * bitsPerPixelFrame);
 
-          // Use manual frame capture for better control
-          const stream = compositeCanvas.captureStream(0); // 0 = manual capture
+          // Use manual frame capture with specified FPS for consistent encoding
+          const stream = compositeCanvas.captureStream(targetFPS); // Set FPS for consistent frame rate
           compositeStreamRef.current = stream;
 
           let options = {
