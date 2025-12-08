@@ -466,6 +466,7 @@
       const [dragOver, setDragOver] = useState(false);
       const [exportAspectRatio, setExportAspectRatio] = useState('16:9');
       const [exportResolution, setExportResolution] = useState('1920x1080');
+      const [exportSpeed, setExportSpeed] = useState(0.25);
       
       const mapRef = useRef(null);
       const mapInstanceRef = useRef(null);
@@ -476,6 +477,7 @@
       const originalBoundsRef = useRef(null);
       const lastTimestampRef = useRef(null);
       const isPlayingRef = useRef(isPlaying);
+      const originalSpeedRef = useRef(null);
 
       // Update resolution when aspect ratio changes
       useEffect(() => {
@@ -952,9 +954,20 @@
 
           compositeCanvasRef.current = compositeCanvas;
 
+          // Track last frame time for throttling
+          let lastFrameTime = 0;
+          const targetFrameInterval = 1000 / 15; // 15 FPS for smoother tile loading
+
           // Function to draw all layers onto the composite
-          const drawComposite = () => {
+          const drawComposite = (timestamp) => {
             if (!compositeCanvasRef.current || !isRecordingRef.current) return;
+
+            // Throttle to target frame rate
+            if (timestamp - lastFrameTime < targetFrameInterval) {
+              requestAnimationFrame(drawComposite);
+              return;
+            }
+            lastFrameTime = timestamp;
 
             const ctx = compositeCanvasRef.current.getContext('2d');
             const currentMapRect = mapContainer.getBoundingClientRect();
@@ -971,6 +984,8 @@
             // 1. Draw tile images (background map) with CORS-enabled tiles
             const tileImages = Array.from(mapContainer.querySelectorAll('.leaflet-tile-pane img'));
             let tilesDrawn = 0;
+            let tilesLoading = 0;
+
             tileImages.forEach(img => {
               if (img.complete && img.naturalWidth > 0) {
                 try {
@@ -983,8 +998,20 @@
                   // CORS error - tile server doesn't support crossOrigin
                   console.warn('Could not draw tile (CORS):', e.message);
                 }
+              } else if (!img.complete) {
+                tilesLoading++;
               }
             });
+
+            // Show loading indicator if tiles are still loading
+            if (tilesLoading > 0 && tilesDrawn > 0) {
+              ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+              ctx.fillRect(10, 10, 200, 30);
+              ctx.fillStyle = '#fc4c02';
+              ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+              ctx.textAlign = 'left';
+              ctx.fillText(`Loading tiles: ${tilesLoading} remaining`, 20, 30);
+            }
 
             // Fallback: draw dark background if no tiles could be drawn
             if (tilesDrawn === 0) {
@@ -1092,8 +1119,8 @@
           // Start the composite drawing loop
           requestAnimationFrame(drawComposite);
 
-          // Capture the composite canvas
-          const stream = compositeCanvas.captureStream(30);
+          // Capture the composite canvas at 15 FPS to give tiles time to load
+          const stream = compositeCanvas.captureStream(15);
           compositeStreamRef.current = stream;
 
           // Use WebM format (reliable across all browsers)
@@ -1133,6 +1160,12 @@
             setIsRecording(false);
             isRecordingRef.current = false;
 
+            // Restore original speed
+            if (originalSpeedRef.current !== null) {
+              setSpeed(originalSpeedRef.current);
+              originalSpeedRef.current = null;
+            }
+
             // Cleanup composite canvas
             if (compositeStreamRef.current) {
               compositeStreamRef.current.getTracks().forEach(track => track.stop());
@@ -1146,6 +1179,10 @@
           setIsRecording(true);
           isRecordingRef.current = true;
           setProgress(0);
+
+          // Save original speed and set export speed
+          originalSpeedRef.current = speed;
+          setSpeed(exportSpeed);
           setIsPlaying(true);
 
         } catch (err) {
@@ -1162,6 +1199,12 @@
 
         // Update recording state
         isRecordingRef.current = false;
+
+        // Restore original speed
+        if (originalSpeedRef.current !== null) {
+          setSpeed(originalSpeedRef.current);
+          originalSpeedRef.current = null;
+        }
 
         // Cleanup composite canvas if it exists
         if (compositeStreamRef.current) {
@@ -1417,6 +1460,21 @@
                           )}
                         </select>
                       </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>
+                          Export Speed: {exportSpeed}x (slower = better tile loading)
+                        </label>
+                        <input
+                          type="range"
+                          className="slider"
+                          min="0.1"
+                          max="1.0"
+                          step="0.05"
+                          value={exportSpeed}
+                          onChange={(e) => setExportSpeed(parseFloat(e.target.value))}
+                          disabled={isRecording}
+                        />
+                      </div>
                       <button
                         className="btn btn-primary"
                         onClick={isRecording ? stopRecording : startRecording}
@@ -1425,7 +1483,7 @@
                         {isRecording ? '⏹ Stop Export' : '🎥 Export Video'}
                       </button>
                       <p style={{ fontSize: '11px', color: '#999', marginTop: '8px' }}>
-                        Video captures current map view as WebM format.
+                        Video captures current map view as WebM format. Lower export speed gives tiles more time to load.
                       </p>
                     </div>
                   </div>
