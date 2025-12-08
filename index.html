@@ -530,12 +530,11 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
-    // 1.3.1 - Improved tile loading detection, native resolution rendering, disabled zoom during export
     // 1.3.0 - Added quality and FPS controls, improved bitrate calculation, manual frame capture
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "1.3.1";
+    const APP_VERSION = "1.3.0";
 
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
@@ -905,8 +904,8 @@
           }
         });
 
-        // Handle zoom to track (disabled during rendering to avoid tile reloading)
-        if (zoomToTrack && progress > 0 && progress < 100 && !isRendering) {
+        // Handle zoom to track
+        if (zoomToTrack && progress > 0 && progress < 100) {
           // Collect all current positions
           const currentPositions = [];
           tracks.forEach((track, trackIndex) => {
@@ -982,7 +981,7 @@
             });
           }
         }
-      }, [tracks, progress, showAllTracks, showLabels, animationStyle, zoomToTrack, zoomLevel, isRendering]);
+      }, [tracks, progress, showAllTracks, showLabels, animationStyle, zoomToTrack, zoomLevel]);
 
       const togglePlay = () => {
         if (tracks.length === 0) return;
@@ -1005,61 +1004,37 @@
       const renderCancelledRef = useRef(false);
 
       // Helper function to wait for tiles to load
-      const waitForTilesToLoad = async (mapContainer, maxWaitTime = 3000) => {
-        const startTime = Date.now();
-        let lastTileCount = 0;
-        let stableCount = 0;
+      const waitForTilesToLoad = async (mapContainer, maxWaitTime = 500) => {
+        const tileImages = Array.from(mapContainer.querySelectorAll('.leaflet-tile-pane img'));
+        const loadingTiles = tileImages.filter(img => !img.complete || img.naturalWidth === 0);
 
-        while (Date.now() - startTime < maxWaitTime) {
-          const tileImages = Array.from(mapContainer.querySelectorAll('.leaflet-tile-pane img'));
-
-          // Filter for visible, high-opacity tiles (current zoom level)
-          const visibleTiles = tileImages.filter(img => {
-            const style = window.getComputedStyle(img);
-            const opacity = parseFloat(style.opacity);
-            return opacity > 0.5; // Only consider tiles that are mostly visible
-          });
-
-          // Check if tiles are loaded
-          const loadingTiles = visibleTiles.filter(img => !img.complete || img.naturalWidth === 0);
-          const loadedTiles = visibleTiles.filter(img => img.complete && img.naturalWidth > 0);
-
-          console.log(`Tiles: ${loadedTiles.length} loaded, ${loadingTiles.length} loading`);
-
-          // If tile count is stable and all visible tiles loaded
-          if (loadingTiles.length === 0 && loadedTiles.length > 0) {
-            if (loadedTiles.length === lastTileCount) {
-              stableCount++;
-              // Wait for tile count to be stable for 3 checks (300ms)
-              if (stableCount >= 3) {
-                // Extra wait for rendering to settle
-                await new Promise(resolve => setTimeout(resolve, 200));
-                return true;
-              }
-            } else {
-              stableCount = 0;
-            }
-            lastTileCount = loadedTiles.length;
-          } else {
-            stableCount = 0;
-            lastTileCount = loadedTiles.length;
-          }
-
-          await new Promise(resolve => setTimeout(resolve, 100));
+        // If all tiles already loaded, just wait briefly for render settle
+        if (loadingTiles.length === 0) {
+          await new Promise(resolve => setTimeout(resolve, 16));
+          return true;
         }
 
-        console.warn('Tile loading timeout');
+        // Otherwise wait for tiles to load
+        const startTime = Date.now();
+        while (Date.now() - startTime < maxWaitTime) {
+          const currentTileImages = Array.from(mapContainer.querySelectorAll('.leaflet-tile-pane img'));
+          const currentLoadingTiles = currentTileImages.filter(img => !img.complete || img.naturalWidth === 0);
+
+          if (currentLoadingTiles.length === 0) {
+            // All tiles loaded, wait briefly for rendering to settle
+            await new Promise(resolve => setTimeout(resolve, 50));
+            return true;
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
         return false; // Timeout
       };
 
       // Function to capture a single frame
       const captureFrame = (mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight) => {
-        const ctx = compositeCanvas.getContext('2d', { alpha: false });
+        const ctx = compositeCanvas.getContext('2d');
         const currentMapRect = mapContainer.getBoundingClientRect();
-
-        // Enable high-quality image rendering
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
 
         // Clear canvas with black background
         ctx.fillStyle = '#000000';
@@ -1070,37 +1045,23 @@
         ctx.translate(offsetX, offsetY);
         ctx.scale(scale, scale);
 
-        // 1. Draw tile images (background map) - only visible, high-opacity tiles
+        // 1. Draw tile images (background map)
         const tileImages = Array.from(mapContainer.querySelectorAll('.leaflet-tile-pane img'));
         let tilesDrawn = 0;
 
-        // Filter for visible tiles (current zoom level)
-        const visibleTiles = tileImages.filter(img => {
-          const style = window.getComputedStyle(img);
-          const opacity = parseFloat(style.opacity);
-          return opacity > 0.5 && img.complete && img.naturalWidth > 0;
-        });
-
-        visibleTiles.forEach(img => {
-          try {
-            const rect = img.getBoundingClientRect();
-            const imgOffsetX = rect.left - currentMapRect.left;
-            const imgOffsetY = rect.top - currentMapRect.top;
-
-            // Draw at native resolution for better quality
-            // Use the tile's natural dimensions, scaled to match display size
-            ctx.drawImage(
-              img,
-              0, 0, img.naturalWidth, img.naturalHeight, // Source dimensions (native resolution)
-              imgOffsetX, imgOffsetY, rect.width, rect.height // Destination dimensions
-            );
-            tilesDrawn++;
-          } catch (e) {
-            console.warn('Could not draw tile (CORS):', e.message);
+        tileImages.forEach(img => {
+          if (img.complete && img.naturalWidth > 0) {
+            try {
+              const rect = img.getBoundingClientRect();
+              const imgOffsetX = rect.left - currentMapRect.left;
+              const imgOffsetY = rect.top - currentMapRect.top;
+              ctx.drawImage(img, imgOffsetX, imgOffsetY, rect.width, rect.height);
+              tilesDrawn++;
+            } catch (e) {
+              console.warn('Could not draw tile (CORS):', e.message);
+            }
           }
         });
-
-        console.log(`Frame captured with ${tilesDrawn} tiles`);
 
         // Fallback: draw dark background if no tiles could be drawn
         if (tilesDrawn === 0) {
@@ -1324,8 +1285,6 @@
           const totalFrames = Math.round(10 * targetFPS); // 10 seconds at selected FPS
           const videoTrack = stream.getVideoTracks()[0];
 
-          console.log(`Starting render: ${totalFrames} frames at ${targetFPS} FPS`);
-
           for (let frame = 0; frame <= totalFrames; frame++) {
             if (renderCancelledRef.current) {
               break;
@@ -1335,15 +1294,11 @@
             setProgress(progressValue);
             setRenderProgress(progressValue);
 
-            // Wait for React to update and render (2 animation frames for stability)
-            await new Promise(resolve => requestAnimationFrame(resolve));
+            // Wait for React to update and render
             await new Promise(resolve => requestAnimationFrame(resolve));
 
-            // Wait for tiles to load completely (increased timeout)
-            const tilesReady = await waitForTilesToLoad(mapContainer, 3000);
-            if (!tilesReady) {
-              console.warn(`Frame ${frame}: Tiles not fully loaded, continuing anyway`);
-            }
+            // Wait for tiles to load (optimized - fast return if already loaded)
+            await waitForTilesToLoad(mapContainer, 500);
 
             // Capture frame to canvas
             captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight);
@@ -1354,10 +1309,8 @@
             }
 
             // Small delay to ensure MediaRecorder processes the frame
-            await new Promise(resolve => setTimeout(resolve, 33)); // Give MediaRecorder time to encode
+            await new Promise(resolve => setTimeout(resolve, 16)); // ~60fps timing
           }
-
-          console.log('Render complete, stopping recorder');
 
           // Stop recording
           if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
