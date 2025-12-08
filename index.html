@@ -395,8 +395,6 @@
 
     .map-legend {
       position: absolute;
-      bottom: 30px;
-      left: 20px;
       background: rgba(45, 45, 45, 0.95);
       padding: 15px;
       border-radius: 8px;
@@ -530,6 +528,8 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 1.4.3 - Added legend position control (top-left, top-right, bottom-left, bottom-right), default to bottom-left
+    // 1.4.2 - Hybrid MP4/WebM export (MP4 on Safari, WebM on Chrome/Firefox), added server-side conversion comments for future
     // 1.4.1 - Fix legend rendering in exported video, optimize frame timing (1000ms + fast polling), show title in browser view
     // 1.4.0 - Added customizable video title with positioning/font/color controls, changed track labels to Track 1/2/3, auto-populate title from first track date
     // 1.3.2 - Resize map container to export resolution for native tile quality, increase tile wait to 2000ms, fix frame rate consistency
@@ -537,7 +537,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "1.4.1";
+    const APP_VERSION = "1.4.3";
 
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
@@ -563,6 +563,7 @@
       const [titleSize, setTitleSize] = useState(24);
       const [titleFont, setTitleFont] = useState('Arial');
       const [titleColor, setTitleColor] = useState('#ffffff');
+      const [legendPosition, setLegendPosition] = useState('bottom-left');
       
       const mapRef = useRef(null);
       const mapInstanceRef = useRef(null);
@@ -1050,7 +1051,7 @@
       };
 
       // Function to capture a single frame
-      const captureFrame = (mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, titleText, titlePos, titleFontSize, titleFontFamily, titleTextColor, shouldShowLegend, currentTracks) => {
+      const captureFrame = (mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, titleText, titlePos, titleFontSize, titleFontFamily, titleTextColor, shouldShowLegend, currentTracks, legendPos) => {
         const ctx = compositeCanvas.getContext('2d');
         const currentMapRect = mapContainer.getBoundingClientRect();
 
@@ -1130,8 +1131,31 @@
             // Calculate legend dimensions
             const legendWidth = 200;
             const legendHeight = 40 + (currentTracks.length * 25) + 15;
-            const legendX = 20;
-            const legendY = 20;
+            const padding = 20;
+
+            // Calculate legend position based on legendPos parameter
+            let legendX, legendY;
+            switch (legendPos) {
+              case 'top-left':
+                legendX = padding;
+                legendY = padding;
+                break;
+              case 'top-right':
+                legendX = sourceWidth - legendWidth - padding;
+                legendY = padding;
+                break;
+              case 'bottom-left':
+                legendX = padding;
+                legendY = sourceHeight - legendHeight - padding;
+                break;
+              case 'bottom-right':
+                legendX = sourceWidth - legendWidth - padding;
+                legendY = sourceHeight - legendHeight - padding;
+                break;
+              default:
+                legendX = padding;
+                legendY = sourceHeight - legendHeight - padding; // default to bottom-left
+            }
 
             // Draw legend background
             ctx.fillStyle = 'rgba(45, 45, 45, 0.95)';
@@ -1310,16 +1334,34 @@
             bitsPerSecond: targetBitrate
           };
           let mimeType = 'video/webm';
+          let fileExtension = 'webm';
 
-          // Prefer VP9 for better quality
-          if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+          // HYBRID APPROACH: Try MP4 first (Safari/iOS), fallback to WebM (Chrome/Firefox)
+          // MP4 provides better compatibility with video players, editors, and social media
+          // WebM provides better compression and is patent-free
+          if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
+            // MP4 with H.264 codec (supported mainly on Safari/iOS)
+            options.mimeType = 'video/mp4;codecs=h264';
+            mimeType = 'video/mp4';
+            fileExtension = 'mp4';
+            console.log('Recording format: MP4 (H.264)');
+          } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+            // WebM with VP9 codec (best quality, Chrome/Firefox)
             options.mimeType = 'video/webm;codecs=vp9';
             mimeType = 'video/webm';
+            fileExtension = 'webm';
+            console.log('Recording format: WebM (VP9)');
           } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+            // WebM with VP8 codec (fallback)
             options.mimeType = 'video/webm;codecs=vp8';
             mimeType = 'video/webm';
+            fileExtension = 'webm';
+            console.log('Recording format: WebM (VP8)');
           } else if (MediaRecorder.isTypeSupported('video/webm')) {
+            // WebM with default codec
             options.mimeType = 'video/webm';
+            fileExtension = 'webm';
+            console.log('Recording format: WebM (default)');
           }
 
           console.log(`Export settings: ${exportWidth}x${exportHeight} @ ${targetFPS}fps, ${(targetBitrate/1000000).toFixed(1)} Mbps, ${exportQuality} quality`);
@@ -1351,10 +1393,38 @@
             }
 
             const blob = new Blob(recordedChunksRef.current, { type: mimeType });
+
+            // OPTION 5 (SERVER-SIDE CONVERSION) - Future Implementation:
+            // If you want to always provide MP4 output regardless of browser:
+            // 1. Upload blob to server endpoint: POST /api/convert-video with FormData
+            // 2. Server uses FFmpeg to convert WebM → MP4 (takes ~5-10 seconds)
+            // 3. Return MP4 download URL or stream MP4 directly
+            // 4. User downloads MP4 file
+            //
+            // Server-side conversion provides:
+            // - Universal MP4 output for all users
+            // - Fast conversion (server CPU vs browser)
+            // - No client-side overhead (no 30MB FFmpeg.wasm library)
+            //
+            // Requires:
+            // - Backend server (Node.js + Express, Python + Flask, etc.)
+            // - FFmpeg installed on server
+            // - Cloud hosting (Vercel, Netlify Functions, AWS Lambda with FFmpeg layer)
+            // - Cannot use GitHub Pages (static only)
+            //
+            // Example server endpoint (Node.js):
+            // app.post('/api/convert-video', async (req, res) => {
+            //   const inputFile = req.files.video;
+            //   const outputFile = `output-${Date.now()}.mp4`;
+            //   await execPromise(`ffmpeg -i ${inputFile} -c:v libx264 -preset fast -crf 22 ${outputFile}`);
+            //   res.download(outputFile);
+            // });
+
+            // Current approach: Direct download (client-side recording)
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `gpx-animation-${Date.now()}.webm`;
+            a.download = `gpx-animation-${Date.now()}.${fileExtension}`;
             a.click();
             URL.revokeObjectURL(url);
 
@@ -1399,7 +1469,7 @@
             await waitForTilesToLoad(mapContainer, 1000);
 
             // Capture frame to canvas
-            captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks);
+            captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks, legendPosition);
 
             // Manually request frame from stream (for captureStream(0) mode)
             if (videoTrack && videoTrack.requestFrame) {
@@ -1630,6 +1700,23 @@
                         <span>Show legend</span>
                       </label>
                     </div>
+
+                    {showLegend && (
+                      <div style={{ marginBottom: '12px', marginLeft: '24px' }}>
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Legend Position</label>
+                        <select
+                          className="select"
+                          value={legendPosition}
+                          onChange={(e) => setLegendPosition(e.target.value)}
+                          style={{ width: '100%' }}
+                        >
+                          <option value="top-left">Top Left</option>
+                          <option value="top-right">Top Right</option>
+                          <option value="bottom-left">Bottom Left</option>
+                          <option value="bottom-right">Bottom Right</option>
+                        </select>
+                      </div>
+                    )}
 
                     <div className="control-group">
                       <label className="checkbox-group">
@@ -1876,7 +1963,21 @@
                 </div>
               )}
               {tracks.length > 0 && showLegend && !isRendering && (
-                <div className="map-legend">
+                <div
+                  className="map-legend"
+                  style={{
+                    ...(() => {
+                      const padding = '20px';
+                      const positions = {
+                        'top-left': { top: padding, left: padding, bottom: 'auto', right: 'auto' },
+                        'top-right': { top: padding, right: padding, bottom: 'auto', left: 'auto' },
+                        'bottom-left': { bottom: padding, left: padding, top: 'auto', right: 'auto' },
+                        'bottom-right': { bottom: padding, right: padding, top: 'auto', left: 'auto' }
+                      };
+                      return positions[legendPosition] || positions['bottom-left'];
+                    })()
+                  }}
+                >
                   <div className="legend-title">Tracks</div>
                   {tracks.map(track => (
                     <div key={track.id} className="legend-item">
