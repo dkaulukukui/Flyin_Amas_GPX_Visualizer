@@ -9,8 +9,6 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/umd/ffmpeg.js"></script>
-  <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
   <style>
     * {
       margin: 0;
@@ -459,7 +457,6 @@
       const [progress, setProgress] = useState(0);
       const [speed, setSpeed] = useState(1);
       const [isRecording, setIsRecording] = useState(false);
-      const [isConverting, setIsConverting] = useState(false);
       const [showAllTracks, setShowAllTracks] = useState(true);
       const [showLabels, setShowLabels] = useState(true);
       const [showLegend, setShowLegend] = useState(true);
@@ -881,49 +878,6 @@
         lastTimestampRef.current = null;
       };
 
-      const convertToMP4 = async (webmBlob) => {
-        try {
-          setIsConverting(true);
-          const { FFmpeg } = FFmpegWASM;
-          const { fetchFile } = FFmpegUtil;
-
-          const ffmpeg = new FFmpeg();
-          await ffmpeg.load();
-
-          // Write WebM file
-          await ffmpeg.writeFile('input.webm', await fetchFile(webmBlob));
-
-          // Convert to MP4
-          await ffmpeg.exec(['-i', 'input.webm', '-c:v', 'libx264', '-preset', 'fast', '-crf', '22', 'output.mp4']);
-
-          // Read the output
-          const data = await ffmpeg.readFile('output.mp4');
-          const mp4Blob = new Blob([data.buffer], { type: 'video/mp4' });
-
-          // Download
-          const url = URL.createObjectURL(mp4Blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `gpx-animation-${Date.now()}.mp4`;
-          a.click();
-          URL.revokeObjectURL(url);
-
-          setIsConverting(false);
-        } catch (err) {
-          console.error('Conversion error:', err);
-          alert('Failed to convert to MP4. Downloading as WebM instead.');
-          setIsConverting(false);
-
-          // Fallback to WebM
-          const url = URL.createObjectURL(webmBlob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `gpx-animation-${Date.now()}.webm`;
-          a.click();
-          URL.revokeObjectURL(url);
-        }
-      };
-
       const startRecording = async () => {
         try {
           // Wait a bit for map to render
@@ -937,14 +891,24 @@
             return;
           }
 
-          // Use the first canvas (tiles) or create a combined stream
+          // Use the first canvas (tiles)
           const canvas = canvases[0];
           const stream = canvas.captureStream(30);
 
-          // Try to use a better codec if available
+          // Try different codecs in order of preference
           let options = { videoBitsPerSecond: 5000000 };
-          if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+          let extension = 'webm';
+          let mimeType = 'video/webm';
+
+          // Try MP4 first (Safari/iOS support)
+          if (MediaRecorder.isTypeSupported('video/mp4')) {
+            options.mimeType = 'video/mp4';
+            extension = 'mp4';
+            mimeType = 'video/mp4';
+          } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
             options.mimeType = 'video/webm;codecs=vp9';
+          } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+            options.mimeType = 'video/webm;codecs=vp8';
           } else if (MediaRecorder.isTypeSupported('video/webm')) {
             options.mimeType = 'video/webm';
           }
@@ -958,10 +922,15 @@
             }
           };
 
-          recorder.onstop = async () => {
-            const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+          recorder.onstop = () => {
+            const blob = new Blob(recordedChunksRef.current, { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `gpx-animation-${Date.now()}.${extension}`;
+            a.click();
+            URL.revokeObjectURL(url);
             setIsRecording(false);
-            await convertToMP4(blob);
           };
 
           recorder.start();
@@ -1197,12 +1166,12 @@
                       <button
                         className="btn btn-primary"
                         onClick={isRecording ? stopRecording : startRecording}
-                        disabled={(isPlaying && !isRecording) || isConverting}
+                        disabled={isPlaying && !isRecording}
                       >
-                        {isRecording ? '⏹ Stop Recording' : isConverting ? '⏳ Converting to MP4...' : '🎥 Record Video'}
+                        {isRecording ? '⏹ Stop Recording' : '🎥 Record Video'}
                       </button>
                       <p style={{ fontSize: '11px', color: '#999', marginTop: '8px' }}>
-                        {isConverting ? 'Converting video to MP4 format...' : 'Recording will auto-play the animation and save as MP4'}
+                        Recording will auto-play the animation and save as video (WebM or MP4)
                       </p>
                     </div>
                   </div>
@@ -1261,12 +1230,6 @@
                 <div className="recording-indicator">
                   <div className="recording-dot"></div>
                   RECORDING
-                </div>
-              )}
-              {isConverting && (
-                <div className="recording-indicator" style={{ background: '#ff8c00' }}>
-                  <div className="recording-dot"></div>
-                  CONVERTING TO MP4
                 </div>
               )}
               {tracks.length > 0 && showLegend && (
