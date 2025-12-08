@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPX Track Animator</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #1a1a1a;
+      color: #fff;
+    }
+    
+    #root {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .header {
+      background: #2d2d2d;
+      padding: 20px;
+      border-bottom: 2px solid #fc4c02;
+    }
+    
+    .header h1 {
+      font-size: 24px;
+      color: #fc4c02;
+      margin-bottom: 5px;
+    }
+    
+    .header p {
+      color: #999;
+      font-size: 14px;
+    }
+    
+    .main-container {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+    
+    .sidebar {
+      width: 320px;
+      background: #2d2d2d;
+      padding: 20px;
+      overflow-y: auto;
+      border-right: 1px solid #444;
+    }
+    
+    .map-container {
+      flex: 1;
+      position: relative;
+    }
+    
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+    
+    .upload-zone {
+      border: 2px dashed #fc4c02;
+      border-radius: 8px;
+      padding: 30px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+      margin-bottom: 20px;
+    }
+    
+    .upload-zone:hover {
+      background: rgba(252, 76, 2, 0.1);
+      border-color: #ff6b2c;
+    }
+    
+    .upload-zone.dragover {
+      background: rgba(252, 76, 2, 0.2);
+      border-color: #ff6b2c;
+    }
+    
+    .upload-icon {
+      font-size: 48px;
+      margin-bottom: 10px;
+    }
+    
+    .file-input {
+      display: none;
+    }
+    
+    .track-list {
+      margin-bottom: 20px;
+    }
+    
+    .track-item {
+      background: #3a3a3a;
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .track-name {
+      font-size: 14px;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    
+    .track-remove {
+      background: #ff4444;
+      border: none;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    
+    .track-remove:hover {
+      background: #cc0000;
+    }
+    
+    .controls {
+      background: #3a3a3a;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+    }
+    
+    .control-group {
+      margin-bottom: 15px;
+    }
+    
+    .control-group:last-child {
+      margin-bottom: 0;
+    }
+    
+    .control-label {
+      display: block;
+      font-size: 12px;
+      color: #999;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .button-group {
+      display: flex;
+      gap: 8px;
+    }
+    
+    .btn {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    
+    .btn-primary {
+      background: #fc4c02;
+      color: white;
+    }
+    
+    .btn-primary:hover:not(:disabled) {
+      background: #ff6b2c;
+    }
+    
+    .btn-secondary {
+      background: #555;
+      color: white;
+    }
+    
+    .btn-secondary:hover:not(:disabled) {
+      background: #666;
+    }
+    
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .slider-container {
+      margin-top: 10px;
+    }
+    
+    .slider {
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      background: #555;
+      outline: none;
+      -webkit-appearance: none;
+    }
+    
+    .slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #fc4c02;
+      cursor: pointer;
+    }
+    
+    .slider::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #fc4c02;
+      cursor: pointer;
+      border: none;
+    }
+    
+    .progress-bar {
+      height: 8px;
+      background: #555;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #fc4c02, #ff6b2c);
+      transition: width 0.1s linear;
+    }
+    
+    .stats {
+      background: #3a3a3a;
+      padding: 15px;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+    
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    
+    .stat-row:last-child {
+      margin-bottom: 0;
+    }
+    
+    .stat-label {
+      color: #999;
+    }
+    
+    .stat-value {
+      color: #fc4c02;
+      font-weight: 600;
+    }
+    
+    .recording-indicator {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: #ff0000;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 20px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 1000;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    
+    .recording-dot {
+      width: 12px;
+      height: 12px;
+      background: white;
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    
+    .select {
+      width: 100%;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #555;
+      background: #2d2d2d;
+      color: white;
+      font-size: 14px;
+    }
+    
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .checkbox {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    function GPXTrackAnimator() {
+      const [tracks, setTracks] = useState([]);
+      const [isPlaying, setIsPlaying] = useState(false);
+      const [progress, setProgress] = useState(0);
+      const [speed, setSpeed] = useState(1);
+      const [isRecording, setIsRecording] = useState(false);
+      const [showAllTracks, setShowAllTracks] = useState(true);
+      const [animationStyle, setAnimationStyle] = useState('sequential');
+      const [dragOver, setDragOver] = useState(false);
+      
+      const mapRef = useRef(null);
+      const mapInstanceRef = useRef(null);
+      const animationFrameRef = useRef(null);
+      const polylineRefs = useRef([]);
+      const mediaRecorderRef = useRef(null);
+      const recordedChunksRef = useRef([]);
+
+      useEffect(() => {
+        // Initialize map
+        if (!mapInstanceRef.current) {
+          const map = L.map('map').setView([37.7749, -122.4194], 12);
+          
+          // Satellite tile layer
+          L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Esri, DigitalGlobe, GeoEye, Earthstar Geographics',
+            maxZoom: 18
+          }).addTo(map);
+          
+          mapInstanceRef.current = map;
+        }
+        
+        return () => {
+          if (animationFrameRef.current) {
+            cancelAnimationFrame(animationFrameRef.current);
+          }
+        };
+      }, []);
+
+      const parseGPX = (text, filename) => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text, 'text/xml');
+        const points = [];
+        
+        const trkpts = doc.querySelectorAll('trkpt');
+        trkpts.forEach(pt => {
+          const lat = parseFloat(pt.getAttribute('lat'));
+          const lon = parseFloat(pt.getAttribute('lon'));
+          const time = pt.querySelector('time')?.textContent;
+          points.push({ lat, lon, time });
+        });
+        
+        return {
+          id: Date.now() + Math.random(),
+          name: filename,
+          points: points,
+          color: `hsl(${Math.random() * 360}, 70%, 50%)`
+        };
+      };
+
+      const handleFileUpload = (files) => {
+        Array.from(files).forEach(file => {
+          if (file.name.endsWith('.gpx')) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const track = parseGPX(e.target.result, file.name);
+              setTracks(prev => [...prev, track]);
+              
+              // Fit map to bounds
+              if (track.points.length > 0) {
+                const bounds = L.latLngBounds(
+                  track.points.map(p => [p.lat, p.lon])
+                );
+                mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50] });
+              }
+            };
+            reader.readAsText(file);
+          }
+        });
+      };
+
+      const handleDrop = (e) => {
+        e.preventDefault();
+        setDragOver(false);
+        handleFileUpload(e.dataTransfer.files);
+      };
+
+      const handleDragOver = (e) => {
+        e.preventDefault();
+        setDragOver(true);
+      };
+
+      const handleDragLeave = () => {
+        setDragOver(false);
+      };
+
+      const removeTrack = (id) => {
+        setTracks(prev => prev.filter(t => t.id !== id));
+        setProgress(0);
+        setIsPlaying(false);
+      };
+
+      const animate = () => {
+        if (!isPlaying || tracks.length === 0) return;
+        
+        setProgress(prev => {
+          const newProgress = prev + (0.5 * speed);
+          if (newProgress >= 100) {
+            setIsPlaying(false);
+            return 100;
+          }
+          return newProgress;
+        });
+        
+        animationFrameRef.current = requestAnimationFrame(animate);
+      };
+
+      useEffect(() => {
+        if (isPlaying) {
+          animate();
+        } else {
+          if (animationFrameRef.current) {
+            cancelAnimationFrame(animationFrameRef.current);
+          }
+        }
+      }, [isPlaying, speed]);
+
+      useEffect(() => {
+        // Clear existing polylines
+        polylineRefs.current.forEach(line => {
+          if (line && mapInstanceRef.current) {
+            mapInstanceRef.current.removeLayer(line);
+          }
+        });
+        polylineRefs.current = [];
+        
+        if (!mapInstanceRef.current || tracks.length === 0) return;
+        
+        tracks.forEach((track, trackIndex) => {
+          let visiblePoints;
+          
+          if (animationStyle === 'sequential') {
+            const tracksBeforeThis = tracks.slice(0, trackIndex);
+            const totalPointsBefore = tracksBeforeThis.reduce((sum, t) => sum + t.points.length, 0);
+            const totalPoints = tracks.reduce((sum, t) => sum + t.points.length, 0);
+            
+            const currentTotalPoint = Math.floor((progress / 100) * totalPoints);
+            const pointsForThisTrack = Math.max(0, currentTotalPoint - totalPointsBefore);
+            
+            visiblePoints = track.points.slice(0, Math.min(pointsForThisTrack, track.points.length));
+          } else {
+            // Simultaneous - all tracks animate together
+            const pointCount = Math.floor((progress / 100) * track.points.length);
+            visiblePoints = track.points.slice(0, pointCount);
+          }
+          
+          if (showAllTracks || progress > 0) {
+            // Show full track in gray
+            const fullLine = L.polyline(
+              track.points.map(p => [p.lat, p.lon]),
+              { color: '#444', weight: 3, opacity: 0.5 }
+            ).addTo(mapInstanceRef.current);
+            polylineRefs.current.push(fullLine);
+          }
+          
+          if (visiblePoints.length > 0) {
+            const animatedLine = L.polyline(
+              visiblePoints.map(p => [p.lat, p.lon]),
+              { color: track.color, weight: 4, opacity: 0.9 }
+            ).addTo(mapInstanceRef.current);
+            polylineRefs.current.push(animatedLine);
+            
+            // Add marker at current position
+            const lastPoint = visiblePoints[visiblePoints.length - 1];
+            const marker = L.circleMarker([lastPoint.lat, lastPoint.lon], {
+              radius: 6,
+              fillColor: track.color,
+              color: '#fff',
+              weight: 2,
+              opacity: 1,
+              fillOpacity: 1
+            }).addTo(mapInstanceRef.current);
+            polylineRefs.current.push(marker);
+          }
+        });
+      }, [tracks, progress, showAllTracks, animationStyle]);
+
+      const togglePlay = () => {
+        if (tracks.length === 0) return;
+        
+        if (progress >= 100) {
+          setProgress(0);
+        }
+        setIsPlaying(!isPlaying);
+      };
+
+      const resetAnimation = () => {
+        setIsPlaying(false);
+        setProgress(0);
+      };
+
+      const startRecording = async () => {
+        try {
+          const canvas = mapInstanceRef.current.getContainer().querySelector('canvas');
+          if (!canvas) {
+            alert('Map canvas not found. Try again.');
+            return;
+          }
+          
+          const stream = canvas.captureStream(30);
+          const recorder = new MediaRecorder(stream, {
+            mimeType: 'video/webm;codecs=vp9',
+            videoBitsPerSecond: 5000000
+          });
+          
+          recordedChunksRef.current = [];
+          
+          recorder.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+              recordedChunksRef.current.push(e.data);
+            }
+          };
+          
+          recorder.onstop = () => {
+            const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `gpx-animation-${Date.now()}.webm`;
+            a.click();
+            setIsRecording(false);
+          };
+          
+          recorder.start();
+          mediaRecorderRef.current = recorder;
+          setIsRecording(true);
+          setProgress(0);
+          setIsPlaying(true);
+          
+        } catch (err) {
+          console.error('Recording error:', err);
+          alert('Failed to start recording. Please try again.');
+        }
+      };
+
+      const stopRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
+          setIsPlaying(false);
+        }
+      };
+
+      useEffect(() => {
+        if (isRecording && progress >= 100) {
+          stopRecording();
+        }
+      }, [progress, isRecording]);
+
+      const totalPoints = tracks.reduce((sum, t) => sum + t.points.length, 0);
+      const totalDistance = tracks.reduce((sum, track) => {
+        let dist = 0;
+        for (let i = 1; i < track.points.length; i++) {
+          const p1 = track.points[i - 1];
+          const p2 = track.points[i];
+          dist += getDistance(p1, p2);
+        }
+        return sum + dist;
+      }, 0);
+
+      function getDistance(p1, p2) {
+        const R = 6371; // Earth's radius in km
+        const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+        const dLon = (p2.lon - p1.lon) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) *
+          Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+      }
+
+      return (
+        <>
+          <div className="header">
+            <h1>🗺️ GPX Track Animator</h1>
+            <p>Upload your Strava GPX files and create animated track videos</p>
+          </div>
+          
+          <div className="main-container">
+            <div className="sidebar">
+              <div 
+                className={`upload-zone ${dragOver ? 'dragover' : ''}`}
+                onClick={() => document.getElementById('file-input').click()}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+              >
+                <div className="upload-icon">📁</div>
+                <div>Drop GPX files here or click to browse</div>
+                <input
+                  id="file-input"
+                  type="file"
+                  className="file-input"
+                  accept=".gpx"
+                  multiple
+                  onChange={(e) => handleFileUpload(e.target.files)}
+                />
+              </div>
+              
+              {tracks.length > 0 && (
+                <div className="track-list">
+                  <div className="control-label">Loaded Tracks ({tracks.length})</div>
+                  {tracks.map(track => (
+                    <div key={track.id} className="track-item">
+                      <span className="track-name" style={{ color: track.color }}>
+                        {track.name}
+                      </span>
+                      <button 
+                        className="track-remove"
+                        onClick={() => removeTrack(track.id)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {tracks.length > 0 && (
+                <>
+                  <div className="controls">
+                    <div className="control-group">
+                      <div className="control-label">Playback</div>
+                      <div className="button-group">
+                        <button 
+                          className="btn btn-primary"
+                          onClick={togglePlay}
+                        >
+                          {isPlaying ? '⏸ Pause' : '▶ Play'}
+                        </button>
+                        <button 
+                          className="btn btn-secondary"
+                          onClick={resetAnimation}
+                        >
+                          ↺ Reset
+                        </button>
+                      </div>
+                      <div className="progress-bar">
+                        <div 
+                          className="progress-fill"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="control-group">
+                      <div className="control-label">Speed: {speed}x</div>
+                      <input
+                        type="range"
+                        className="slider"
+                        min="0.5"
+                        max="5"
+                        step="0.5"
+                        value={speed}
+                        onChange={(e) => setSpeed(parseFloat(e.target.value))}
+                      />
+                    </div>
+                    
+                    <div className="control-group">
+                      <div className="control-label">Animation Style</div>
+                      <select 
+                        className="select"
+                        value={animationStyle}
+                        onChange={(e) => setAnimationStyle(e.target.value)}
+                      >
+                        <option value="sequential">Sequential (one after another)</option>
+                        <option value="simultaneous">Simultaneous (all at once)</option>
+                      </select>
+                    </div>
+                    
+                    <div className="control-group">
+                      <label className="checkbox-group">
+                        <input
+                          type="checkbox"
+                          className="checkbox"
+                          checked={showAllTracks}
+                          onChange={(e) => setShowAllTracks(e.target.checked)}
+                        />
+                        <span>Show full track preview</span>
+                      </label>
+                    </div>
+                  </div>
+                  
+                  <div className="controls">
+                    <div className="control-group">
+                      <div className="control-label">Recording</div>
+                      <button
+                        className="btn btn-primary"
+                        onClick={isRecording ? stopRecording : startRecording}
+                        disabled={isPlaying && !isRecording}
+                      >
+                        {isRecording ? '⏹ Stop Recording' : '🎥 Record Video'}
+                      </button>
+                      <p style={{ fontSize: '11px', color: '#999', marginTop: '8px' }}>
+                        Recording will auto-play the animation and save as .webm
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="stats">
+                    <div className="stat-row">
+                      <span className="stat-label">Total Points:</span>
+                      <span className="stat-value">{totalPoints.toLocaleString()}</span>
+                    </div>
+                    <div className="stat-row">
+                      <span className="stat-label">Total Distance:</span>
+                      <span className="stat-value">{totalDistance.toFixed(2)} km</span>
+                    </div>
+                    <div className="stat-row">
+                      <span className="stat-label">Tracks Loaded:</span>
+                      <span className="stat-value">{tracks.length}</span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            
+            <div className="map-container">
+              {isRecording && (
+                <div className="recording-indicator">
+                  <div className="recording-dot"></div>
+                  RECORDING
+                </div>
+              )}
+              <div id="map" ref={mapRef}></div>
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    ReactDOM.render(<GPXTrackAnimator />, document.getElementById('root'));
+  </script>
+</body>
+</html>
