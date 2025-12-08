@@ -878,35 +878,167 @@
         lastTimestampRef.current = null;
       };
 
+      const compositeCanvasRef = useRef(null);
+      const compositeStreamRef = useRef(null);
+      const isRecordingRef = useRef(false);
+
       const startRecording = async () => {
         try {
           // Wait a bit for map to render
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise(resolve => setTimeout(resolve, 1000));
 
           const mapContainer = mapInstanceRef.current.getContainer();
-          const canvases = mapContainer.querySelectorAll('canvas');
+          const initialCanvases = Array.from(mapContainer.querySelectorAll('canvas'));
 
-          if (canvases.length === 0) {
+          if (initialCanvases.length === 0) {
             alert('Map canvas not found. Please ensure the map has loaded tiles, then try again.');
             return;
           }
 
-          // Use the first canvas (tiles)
-          const canvas = canvases[0];
-          const stream = canvas.captureStream(30);
+          // Create a composite canvas that combines all Leaflet canvases
+          const mapRect = mapContainer.getBoundingClientRect();
+          const compositeCanvas = document.createElement('canvas');
+          compositeCanvas.width = mapRect.width;
+          compositeCanvas.height = mapRect.height;
 
-          // Try different codecs in order of preference
-          let options = { videoBitsPerSecond: 5000000 };
-          let extension = 'webm';
+          compositeCanvasRef.current = compositeCanvas;
+
+          // Function to draw all layers onto the composite
+          const drawComposite = () => {
+            if (!compositeCanvasRef.current || !isRecordingRef.current) return;
+
+            const ctx = compositeCanvasRef.current.getContext('2d');
+            const mapRect = mapContainer.getBoundingClientRect();
+
+            // Clear canvas
+            ctx.clearRect(0, 0, compositeCanvas.width, compositeCanvas.height);
+
+            // 1. Draw tile images (background map)
+            const tileImages = Array.from(mapContainer.querySelectorAll('.leaflet-tile-pane img'));
+            tileImages.forEach(img => {
+              if (img.complete && img.naturalWidth > 0) {
+                try {
+                  const rect = img.getBoundingClientRect();
+                  const offsetX = rect.left - mapRect.left;
+                  const offsetY = rect.top - mapRect.top;
+                  ctx.drawImage(img, offsetX, offsetY, rect.width, rect.height);
+                } catch (e) {
+                  console.warn('Could not draw tile image:', e);
+                }
+              }
+            });
+
+            // 2. Draw canvas layers (tracks, markers)
+            const currentCanvases = Array.from(mapContainer.querySelectorAll('canvas'));
+            currentCanvases.forEach(canvas => {
+              if (canvas.width > 0 && canvas.height > 0) {
+                try {
+                  const rect = canvas.getBoundingClientRect();
+                  const offsetX = rect.left - mapRect.left;
+                  const offsetY = rect.top - mapRect.top;
+                  ctx.drawImage(canvas, offsetX, offsetY);
+                } catch (e) {
+                  console.warn('Could not draw canvas:', e);
+                }
+              }
+            });
+
+            // 3. Draw track labels
+            const labels = Array.from(mapContainer.querySelectorAll('.map-label'));
+            labels.forEach(label => {
+              try {
+                const rect = label.getBoundingClientRect();
+                const text = label.textContent;
+                const color = label.style.color || '#ffffff';
+                const offsetX = rect.left - mapRect.left;
+                const offsetY = rect.top - mapRect.top;
+
+                ctx.font = '700 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+                ctx.fillStyle = color;
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+                ctx.lineWidth = 4;
+                ctx.lineJoin = 'round';
+                ctx.strokeText(text, offsetX, offsetY + 14);
+                ctx.fillText(text, offsetX, offsetY + 14);
+              } catch (e) {
+                console.warn('Could not draw label:', e);
+              }
+            });
+
+            // 4. Draw legend if visible
+            if (showLegend) {
+              const legend = mapContainer.querySelector('.map-legend');
+              if (legend) {
+                try {
+                  const rect = legend.getBoundingClientRect();
+                  const offsetX = rect.left - mapRect.left;
+                  const offsetY = rect.top - mapRect.top;
+
+                  // Draw legend background
+                  ctx.fillStyle = 'rgba(45, 45, 45, 0.95)';
+                  ctx.fillRect(offsetX, offsetY, rect.width, rect.height);
+
+                  // Draw legend border
+                  ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+                  ctx.lineWidth = 1;
+                  ctx.strokeRect(offsetX, offsetY, rect.width, rect.height);
+
+                  // Draw legend title
+                  ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+                  ctx.fillStyle = '#999';
+                  ctx.fillText('TRACKS', offsetX + 15, offsetY + 25);
+
+                  // Draw legend items
+                  const legendItems = Array.from(legend.querySelectorAll('.legend-item'));
+                  legendItems.forEach((item, idx) => {
+                    const colorBar = item.querySelector('.legend-color');
+                    const labelText = item.querySelector('.legend-label');
+
+                    if (colorBar && labelText) {
+                      const color = colorBar.style.backgroundColor;
+                      const text = labelText.textContent;
+                      const itemY = offsetY + 45 + (idx * 25);
+
+                      // Draw color bar
+                      ctx.fillStyle = color;
+                      ctx.fillRect(offsetX + 15, itemY - 5, 20, 3);
+
+                      // Draw label text
+                      ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+                      ctx.fillStyle = '#ffffff';
+                      ctx.fillText(text, offsetX + 45, itemY);
+                    }
+                  });
+                } catch (e) {
+                  console.warn('Could not draw legend:', e);
+                }
+              }
+            }
+
+            // Continue drawing while recording
+            if (compositeCanvasRef.current && isRecordingRef.current) {
+              requestAnimationFrame(drawComposite);
+            }
+          };
+
+          // Start the composite drawing loop
+          requestAnimationFrame(drawComposite);
+
+          // Capture the composite canvas
+          const stream = compositeCanvas.captureStream(30);
+          compositeStreamRef.current = stream;
+
+          // Use WebM format (reliable across all browsers)
+          let options = { videoBitsPerSecond: 8000000 };
           let mimeType = 'video/webm';
 
-          // Try MP4 first (Safari/iOS support)
-          if (MediaRecorder.isTypeSupported('video/mp4')) {
-            options.mimeType = 'video/mp4';
-            extension = 'mp4';
-            mimeType = 'video/mp4';
+          // Try best codec available
+          if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
+            options.mimeType = 'video/webm;codecs=vp9,opus';
           } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
             options.mimeType = 'video/webm;codecs=vp9';
+          } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
+            options.mimeType = 'video/webm;codecs=vp8,opus';
           } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
             options.mimeType = 'video/webm;codecs=vp8';
           } else if (MediaRecorder.isTypeSupported('video/webm')) {
@@ -927,15 +1059,24 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `gpx-animation-${Date.now()}.${extension}`;
+            a.download = `gpx-animation-${Date.now()}.webm`;
             a.click();
             URL.revokeObjectURL(url);
             setIsRecording(false);
+            isRecordingRef.current = false;
+
+            // Cleanup composite canvas
+            if (compositeStreamRef.current) {
+              compositeStreamRef.current.getTracks().forEach(track => track.stop());
+              compositeStreamRef.current = null;
+            }
+            compositeCanvasRef.current = null;
           };
 
           recorder.start();
           mediaRecorderRef.current = recorder;
           setIsRecording(true);
+          isRecordingRef.current = true;
           setProgress(0);
           setIsPlaying(true);
 
@@ -950,6 +1091,16 @@
           mediaRecorderRef.current.stop();
           setIsPlaying(false);
         }
+
+        // Update recording state
+        isRecordingRef.current = false;
+
+        // Cleanup composite canvas if it exists
+        if (compositeStreamRef.current) {
+          compositeStreamRef.current.getTracks().forEach(track => track.stop());
+          compositeStreamRef.current = null;
+        }
+        compositeCanvasRef.current = null;
       };
 
       useEffect(() => {
@@ -1162,16 +1313,16 @@
                   
                   <div className="controls">
                     <div className="control-group">
-                      <div className="control-label">Recording</div>
+                      <div className="control-label">Export</div>
                       <button
                         className="btn btn-primary"
                         onClick={isRecording ? stopRecording : startRecording}
                         disabled={isPlaying && !isRecording}
                       >
-                        {isRecording ? '⏹ Stop Recording' : '🎥 Record Video'}
+                        {isRecording ? '⏹ Stop Export' : '🎥 Export Video'}
                       </button>
                       <p style={{ fontSize: '11px', color: '#999', marginTop: '8px' }}>
-                        Recording will auto-play the animation and save as video (WebM or MP4)
+                        Export will auto-play the animation and save as WebM video. To convert to MP4, use VLC or HandBrake.
                       </p>
                     </div>
                   </div>
@@ -1229,7 +1380,7 @@
               {isRecording && (
                 <div className="recording-indicator">
                   <div className="recording-dot"></div>
-                  RECORDING
+                  EXPORTING
                 </div>
               )}
               {tracks.length > 0 && showLegend && (

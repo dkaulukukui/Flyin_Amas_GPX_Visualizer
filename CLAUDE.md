@@ -57,11 +57,13 @@ Animation loop (lines 431-454):
 
 ### Video Recording
 
-Recording implementation (lines 530-585):
-- Captures Leaflet canvas element using `captureStream(30)` API
-- Uses MediaRecorder with VP9 codec at 5Mbps
+Recording implementation (lines 881-1004):
+- Creates a composite canvas combining all Leaflet canvas layers (tiles, tracks, markers, labels)
+- Continuously updates composite canvas via requestAnimationFrame during recording
+- Captures composite canvas using `captureStream(30)` API
+- Uses MediaRecorder with VP9 or VP8 codec at 8Mbps
 - Auto-starts animation and auto-stops at completion
-- Downloads as .webm file
+- Downloads as .webm file (widely compatible, can be converted to MP4 using VLC/HandBrake)
 
 ## Development
 
