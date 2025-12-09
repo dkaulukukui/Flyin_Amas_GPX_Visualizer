@@ -767,6 +767,10 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 1.6.5 - Fix zoom-to-track in exported videos: remove invalidateSize from frame loop (was resetting zoom), add 100ms wait after zoom operations for tile loading
+    // 1.6.4 - Fix zoom-to-track in exported videos: apply zoom logic during frame-by-frame rendering, not just browser playback
+    // 1.6.3 - Performance: Reduced wait times from 150ms to 30ms (direct drawing eliminates canvas delays), fixed zoom-to-track by separating into independent useEffect
+    // 1.6.2 - iOS/Safari fix: Draw tracks directly to canvas, bypassing Leaflet renderer (Option A implementation)
     // 1.6.1 - iOS/Safari video export fix: force Leaflet redraw, add canvas rendering wait (150ms), validate canvas content before capture
     // 1.6.0 - Mobile-friendly responsive design: hamburger menu, collapsible sidebar, touch-friendly controls, tablet support
     // 1.5.0 - Made progress bar interactive: click to jump, drag to scrub through animation
@@ -780,7 +784,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "1.6.1";
+    const APP_VERSION = "1.6.5";
 
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
@@ -1164,6 +1168,11 @@
             }
           }
         });
+      }, [tracks, progress, showAllTracks, showLabels, animationStyle]);
+
+      // Separate effect for zoom-to-track to prevent interruption during animation
+      useEffect(() => {
+        if (!mapInstanceRef.current || tracks.length === 0) return;
 
         // Handle zoom to track
         if (zoomToTrack && progress > 0 && progress < 100) {
@@ -1221,14 +1230,13 @@
 
           if (currentPositions.length > 0) {
             if (currentPositions.length === 1) {
-              mapInstanceRef.current.setView(currentPositions[0], zoomLevel, { animate: true, duration: 0.3 });
+              mapInstanceRef.current.setView(currentPositions[0], zoomLevel, { animate: false });
             } else {
               const bounds = L.latLngBounds(currentPositions);
               mapInstanceRef.current.fitBounds(bounds, {
                 padding: [100, 100],
                 maxZoom: zoomLevel,
-                animate: true,
-                duration: 0.3
+                animate: false
               });
             }
           }
@@ -1242,7 +1250,7 @@
             });
           }
         }
-      }, [tracks, progress, showAllTracks, showLabels, animationStyle, zoomToTrack, zoomLevel]);
+      }, [tracks, progress, animationStyle, zoomToTrack, zoomLevel]);
 
       const togglePlay = () => {
         if (tracks.length === 0) return;
@@ -1343,8 +1351,80 @@
         return false; // Timeout
       };
 
+      // Helper: Convert lat/lon to pixel coordinates on canvas
+      const latLonToPixel = (lat, lon, mapBounds, canvasWidth, canvasHeight) => {
+        // Get map bounds
+        const north = mapBounds.getNorth();
+        const south = mapBounds.getSouth();
+        const east = mapBounds.getEast();
+        const west = mapBounds.getWest();
+
+        // Convert to pixels
+        const x = ((lon - west) / (east - west)) * canvasWidth;
+        const y = ((north - lat) / (north - south)) * canvasHeight;
+
+        return { x, y };
+      };
+
+      // Helper: Draw track polylines directly to canvas (iOS/Safari fix)
+      const drawTracksDirect = (ctx, tracks, progressPercent, mapBounds, canvasWidth, canvasHeight, animStyle) => {
+        if (!tracks || tracks.length === 0) return;
+
+        tracks.forEach(track => {
+          if (!track.points || track.points.length === 0) return;
+
+          // Calculate which points to show based on progress and animation style
+          let pointsToShow = [];
+
+          if (animStyle === 'simultaneous' && track.startTime && track.endTime) {
+            // Simultaneous mode: show based on absolute time
+            const allTracks = tracks.filter(t => t.startTime && t.endTime);
+            if (allTracks.length > 0) {
+              const earliestStart = Math.min(...allTracks.map(t => t.startTime.getTime()));
+              const latestEnd = Math.max(...allTracks.map(t => t.endTime.getTime()));
+              const currentTime = earliestStart + (latestEnd - earliestStart) * (progressPercent / 100);
+
+              // Show all points up to current time
+              pointsToShow = track.points.filter(p => {
+                if (!p.time) return true;
+                return new Date(p.time).getTime() <= currentTime;
+              });
+            } else {
+              // No time data, show proportionally
+              const numPoints = Math.floor((track.points.length * progressPercent) / 100);
+              pointsToShow = track.points.slice(0, numPoints);
+            }
+          } else {
+            // Sequential mode: show track proportionally
+            const numPoints = Math.floor((track.points.length * progressPercent) / 100);
+            pointsToShow = track.points.slice(0, numPoints);
+          }
+
+          if (pointsToShow.length < 2) return; // Need at least 2 points for a line
+
+          // Draw polyline
+          ctx.beginPath();
+          ctx.strokeStyle = track.color;
+          ctx.lineWidth = 3;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+
+          // Convert first point to pixels
+          const firstPoint = latLonToPixel(pointsToShow[0].lat, pointsToShow[0].lon, mapBounds, canvasWidth, canvasHeight);
+          ctx.moveTo(firstPoint.x, firstPoint.y);
+
+          // Draw lines to subsequent points
+          for (let i = 1; i < pointsToShow.length; i++) {
+            const point = latLonToPixel(pointsToShow[i].lat, pointsToShow[i].lon, mapBounds, canvasWidth, canvasHeight);
+            ctx.lineTo(point.x, point.y);
+          }
+
+          ctx.stroke();
+        });
+      };
+
       // Function to capture a single frame
-      const captureFrame = (mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, titleText, titlePos, titleFontSize, titleFontFamily, titleTextColor, shouldShowLegend, currentTracks, legendPos) => {
+      const captureFrame = (mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, titleText, titlePos, titleFontSize, titleFontFamily, titleTextColor, shouldShowLegend, currentTracks, legendPos, currentProgress, currentAnimStyle, mapInstance) => {
         const ctx = compositeCanvas.getContext('2d');
         const currentMapRect = mapContainer.getBoundingClientRect();
 
@@ -1419,6 +1499,18 @@
         // Debug: log canvas rendering info (iOS troubleshooting)
         if (canvasesDrawn === 0 && currentCanvases.length > 0) {
           console.warn(`⚠️ Warning: Found ${currentCanvases.length} canvases but none had content. Tracks may not appear in video.`);
+          console.log('→ Using direct track rendering fallback (iOS/Safari fix)');
+        }
+
+        // 2b. Draw tracks directly (iOS/Safari fallback - bypasses Leaflet canvas)
+        // This ensures tracks always appear even if Leaflet's canvas renderer fails
+        if (mapInstance && currentTracks && currentTracks.length > 0) {
+          try {
+            const mapBounds = mapInstance.getBounds();
+            drawTracksDirect(ctx, currentTracks, currentProgress, mapBounds, sourceWidth, sourceHeight, currentAnimStyle);
+          } catch (e) {
+            console.warn('Could not draw tracks directly:', e);
+          }
         }
 
         // 3. Draw track labels
@@ -1833,55 +1925,94 @@
             // Wait for React to update and render
             await new Promise(resolve => requestAnimationFrame(resolve));
 
-            // Force Leaflet to redraw/invalidate (ensures polylines are rendered)
-            if (mapInstanceRef.current) {
-              mapInstanceRef.current.invalidateSize({ pan: false });
-              // Trigger a repaint by accessing the map's container
-              mapContainer.offsetHeight; // Force layout recalculation
-            }
+            // Apply zoom-to-track for this frame if enabled
+            if (zoomToTrack && progressValue > 0 && progressValue < 100 && mapInstanceRef.current && tracks.length > 0) {
+              const currentPositions = [];
+              tracks.forEach((track, trackIndex) => {
+                let visiblePoints;
 
-            // Wait for tiles to load (1000ms with fast polling for quality + consistency)
-            await waitForTilesToLoad(mapContainer, 1000);
+                if (animationStyle === 'sequential') {
+                  const tracksBeforeThis = tracks.slice(0, trackIndex);
+                  const totalPointsBefore = tracksBeforeThis.reduce((sum, t) => sum + t.points.length, 0);
+                  const totalPoints = tracks.reduce((sum, t) => sum + t.points.length, 0);
+                  const currentTotalPoint = Math.floor((progressValue / 100) * totalPoints);
+                  const pointsForThisTrack = Math.max(0, currentTotalPoint - totalPointsBefore);
+                  visiblePoints = track.points.slice(0, Math.min(pointsForThisTrack, track.points.length));
+                } else {
+                  // Simultaneous - use absolute time-based synchronization if available
+                  if (track.duration && track.startTime) {
+                    const tracksWithTime = tracks.filter(t => t.startTime && t.endTime);
+                    const earliestStart = Math.min(...tracksWithTime.map(t => t.startTime.getTime()));
+                    const latestEnd = Math.max(...tracksWithTime.map(t => t.endTime.getTime()));
+                    const totalTimeSpan = latestEnd - earliestStart;
 
-            // iOS/Safari Fix: Additional wait for canvas rendering
-            // Safari needs extra time to actually draw polylines to canvas elements
-            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-                         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-            const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+                    const currentAbsoluteTime = earliestStart + (progressValue / 100) * totalTimeSpan;
 
-            if (isIOS || isSafari) {
-              // Wait longer on iOS/Safari for canvas rendering to complete
-              await new Promise(resolve => setTimeout(resolve, 150));
-            } else {
-              // Shorter wait on other browsers
-              await new Promise(resolve => setTimeout(resolve, 50));
-            }
+                    if (currentAbsoluteTime < track.startTime.getTime()) {
+                      visiblePoints = [];
+                    } else {
+                      let pointIndex = 0;
+                      for (let i = 0; i < track.points.length; i++) {
+                        if (track.points[i].time) {
+                          const pointTime = new Date(track.points[i].time);
 
-            // Double-check canvases have content before capturing
-            const canvasCheck = Array.from(mapContainer.querySelectorAll('canvas'));
-            let hasContent = false;
-            canvasCheck.forEach(c => {
-              if (c.width > 0 && c.height > 0) {
-                const testCtx = c.getContext('2d');
-                const imageData = testCtx.getImageData(0, 0, Math.min(c.width, 10), Math.min(c.height, 10));
-                // Check if canvas has any non-transparent pixels
-                for (let i = 3; i < imageData.data.length; i += 4) {
-                  if (imageData.data[i] > 0) {
-                    hasContent = true;
-                    break;
+                          if (pointTime.getTime() <= currentAbsoluteTime) {
+                            pointIndex = i;
+                          } else {
+                            break;
+                          }
+                        }
+                      }
+
+                      visiblePoints = track.points.slice(0, pointIndex + 1);
+                    }
+                  } else {
+                    const pointCount = Math.floor((progressValue / 100) * track.points.length);
+                    visiblePoints = track.points.slice(0, pointCount);
                   }
                 }
-              }
-            });
 
-            // If no canvas content detected on first few frames, wait a bit more
-            if (frame < 10 && !hasContent && (isIOS || isSafari)) {
-              console.log(`Frame ${frame}: No canvas content detected, waiting additional 200ms...`);
-              await new Promise(resolve => setTimeout(resolve, 200));
+                if (visiblePoints.length > 0) {
+                  const lastPoint = visiblePoints[visiblePoints.length - 1];
+                  currentPositions.push([lastPoint.lat, lastPoint.lon]);
+                }
+              });
+
+              if (currentPositions.length > 0) {
+                if (currentPositions.length === 1) {
+                  mapInstanceRef.current.setView(currentPositions[0], zoomLevel, { animate: false });
+                } else {
+                  const bounds = L.latLngBounds(currentPositions);
+                  mapInstanceRef.current.fitBounds(bounds, {
+                    padding: [100, 100],
+                    maxZoom: zoomLevel,
+                    animate: false
+                  });
+                }
+
+                // Wait for zoom operation to complete and tiles to start loading
+                await new Promise(resolve => setTimeout(resolve, 100));
+              }
+            } else if (progressValue === 0 || progressValue >= 100) {
+              // Zoom out to show all tracks at start/end
+              if (tracks.length > 0 && originalBoundsRef.current && mapInstanceRef.current) {
+                mapInstanceRef.current.fitBounds(originalBoundsRef.current, {
+                  padding: [50, 50],
+                  animate: false
+                });
+                await new Promise(resolve => setTimeout(resolve, 100));
+              }
             }
 
+            // Wait for tiles to load at the new zoom level (1000ms with fast polling for quality + consistency)
+            await waitForTilesToLoad(mapContainer, 1000);
+
+            // Small wait for any final rendering to settle
+            // Since we now draw tracks directly, we don't need long waits for canvas rendering
+            await new Promise(resolve => setTimeout(resolve, 30));
+
             // Capture frame to canvas
-            captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks, legendPosition);
+            captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks, legendPosition, progressValue, animationStyle, mapInstanceRef.current);
 
             // Manually request frame from stream (for captureStream(0) mode)
             if (videoTrack && videoTrack.requestFrame) {
