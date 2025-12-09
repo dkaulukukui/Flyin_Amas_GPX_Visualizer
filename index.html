@@ -526,6 +526,237 @@
       font-weight: 600;
       margin-bottom: 20px;
     }
+
+    /* Hamburger Menu Button */
+    .hamburger-btn {
+      display: none;
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      z-index: 1001;
+      background: #fc4c02;
+      border: none;
+      width: 50px;
+      height: 50px;
+      border-radius: 8px;
+      cursor: pointer;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 6px;
+      padding: 0;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      transition: all 0.3s ease;
+    }
+
+    .hamburger-btn:hover {
+      background: #ff6b2c;
+      transform: scale(1.05);
+    }
+
+    .hamburger-btn:active {
+      transform: scale(0.95);
+    }
+
+    .hamburger-line {
+      width: 24px;
+      height: 3px;
+      background: white;
+      border-radius: 2px;
+      transition: all 0.3s ease;
+    }
+
+    .hamburger-btn.open .hamburger-line:nth-child(1) {
+      transform: translateY(9px) rotate(45deg);
+    }
+
+    .hamburger-btn.open .hamburger-line:nth-child(2) {
+      opacity: 0;
+    }
+
+    .hamburger-btn.open .hamburger-line:nth-child(3) {
+      transform: translateY(-9px) rotate(-45deg);
+    }
+
+    /* Backdrop overlay */
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 999;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .sidebar-backdrop.show {
+      display: block;
+      opacity: 1;
+    }
+
+    /* Mobile Responsive Styles */
+    @media (max-width: 768px) {
+      /* Show hamburger menu on mobile */
+      .hamburger-btn {
+        display: flex;
+      }
+
+      /* Hide header on mobile to save space */
+      .header {
+        padding: 15px 20px;
+      }
+
+      .header h1 {
+        font-size: 18px;
+      }
+
+      .header p {
+        font-size: 12px;
+      }
+
+      /* Sidebar becomes overlay on mobile */
+      .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 280px;
+        max-width: 85vw;
+        z-index: 1000;
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+        box-shadow: 4px 0 12px rgba(0, 0, 0, 0.3);
+      }
+
+      .sidebar.open {
+        transform: translateX(0);
+      }
+
+      /* Map takes full width on mobile */
+      .map-container {
+        width: 100%;
+      }
+
+      /* Increase touch target sizes */
+      .btn {
+        min-height: 44px;
+        padding: 12px 20px;
+        font-size: 15px;
+      }
+
+      .checkbox {
+        width: 20px;
+        height: 20px;
+        min-width: 20px;
+        min-height: 20px;
+      }
+
+      .slider {
+        height: 8px;
+      }
+
+      .select {
+        min-height: 44px;
+        padding: 12px;
+        font-size: 15px;
+      }
+
+      input[type="text"],
+      input[type="color"] {
+        min-height: 44px;
+        font-size: 15px;
+      }
+
+      input[type="range"] {
+        height: 40px;
+      }
+
+      /* Adjust control groups spacing */
+      .control-group {
+        margin-bottom: 20px;
+      }
+
+      .control-label {
+        font-size: 14px;
+        margin-bottom: 10px;
+      }
+
+      /* Make legends and overlays responsive */
+      .map-legend {
+        font-size: 12px;
+        padding: 12px;
+        max-width: 180px;
+      }
+
+      .map-title {
+        font-size: 18px !important;
+      }
+
+      /* Track list items */
+      .track-item {
+        padding: 12px;
+      }
+
+      /* Upload zone */
+      .upload-zone {
+        padding: 30px;
+        min-height: 150px;
+      }
+
+      /* Stats */
+      .stats {
+        font-size: 13px;
+      }
+
+      /* Progress bar - make it taller for easier scrubbing */
+      .progress-bar {
+        height: 12px;
+      }
+
+      .progress-bar:hover {
+        height: 14px;
+        margin-top: 8px;
+      }
+    }
+
+    /* Tablet styles (768px - 1024px) */
+    @media (min-width: 769px) and (max-width: 1024px) {
+      .sidebar {
+        width: 280px;
+      }
+
+      .btn {
+        min-height: 40px;
+        padding: 10px 18px;
+      }
+    }
+
+    /* Small mobile devices (< 375px) */
+    @media (max-width: 374px) {
+      .sidebar {
+        width: 100%;
+        max-width: 100%;
+      }
+
+      .hamburger-btn {
+        width: 44px;
+        height: 44px;
+        top: 15px;
+        left: 15px;
+      }
+
+      .header h1 {
+        font-size: 16px;
+      }
+
+      .btn {
+        font-size: 14px;
+        padding: 10px 16px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -536,6 +767,7 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 1.6.0 - Mobile-friendly responsive design: hamburger menu, collapsible sidebar, touch-friendly controls, tablet support
     // 1.5.0 - Made progress bar interactive: click to jump, drag to scrub through animation
     // 1.4.4 - Enhanced codec detection with Safari debugging, try multiple MP4 formats, add conversion help for Safari users
     // 1.4.3 - Added legend position control (top-left, top-right, bottom-left, bottom-right), default to bottom-left
@@ -547,7 +779,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "1.5.0";
+    const APP_VERSION = "1.6.0";
 
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
@@ -574,6 +806,7 @@
       const [titleFont, setTitleFont] = useState('Arial');
       const [titleColor, setTitleColor] = useState('#ffffff');
       const [legendPosition, setLegendPosition] = useState('bottom-left');
+      const [isSidebarOpen, setIsSidebarOpen] = useState(false);
       
       const mapRef = useRef(null);
       const mapInstanceRef = useRef(null);
@@ -1023,6 +1256,15 @@
         setIsPlaying(false);
         setProgress(0);
         lastTimestampRef.current = null;
+      };
+
+      // Mobile sidebar toggle
+      const toggleSidebar = () => {
+        setIsSidebarOpen(!isSidebarOpen);
+      };
+
+      const closeSidebar = () => {
+        setIsSidebarOpen(false);
       };
 
       // Handle progress bar scrubbing (click/drag to seek)
@@ -1648,6 +1890,23 @@
 
       return (
         <>
+          {/* Hamburger Menu Button (Mobile Only) */}
+          <button
+            className={`hamburger-btn ${isSidebarOpen ? 'open' : ''}`}
+            onClick={toggleSidebar}
+            aria-label="Toggle menu"
+          >
+            <div className="hamburger-line"></div>
+            <div className="hamburger-line"></div>
+            <div className="hamburger-line"></div>
+          </button>
+
+          {/* Backdrop Overlay (Mobile Only) */}
+          <div
+            className={`sidebar-backdrop ${isSidebarOpen ? 'show' : ''}`}
+            onClick={closeSidebar}
+          />
+
           <div className="header">
             <div className="header-content">
               <h1>🗺️ Flyin Amas GPX Track Animator</h1>
@@ -1657,7 +1916,7 @@
           </div>
           
           <div className="main-container">
-            <div className="sidebar">
+            <div className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
               <div 
                 className={`upload-zone ${dragOver ? 'dragover' : ''}`}
                 onClick={() => document.getElementById('file-input').click()}
