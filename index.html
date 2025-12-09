@@ -767,6 +767,7 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 1.6.1 - iOS/Safari video export fix: force Leaflet redraw, add canvas rendering wait (150ms), validate canvas content before capture
     // 1.6.0 - Mobile-friendly responsive design: hamburger menu, collapsible sidebar, touch-friendly controls, tablet support
     // 1.5.0 - Made progress bar interactive: click to jump, drag to scrub through animation
     // 1.4.4 - Enhanced codec detection with Safari debugging, try multiple MP4 formats, add conversion help for Safari users
@@ -779,7 +780,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "1.6.0";
+    const APP_VERSION = "1.6.1";
 
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
@@ -1382,18 +1383,43 @@
 
         // 2. Draw canvas layers (tracks, markers)
         const currentCanvases = Array.from(mapContainer.querySelectorAll('canvas'));
-        currentCanvases.forEach(canvas => {
+        let canvasesDrawn = 0;
+        let canvasesSkipped = 0;
+
+        currentCanvases.forEach((canvas, idx) => {
           if (canvas.width > 0 && canvas.height > 0) {
             try {
               const rect = canvas.getBoundingClientRect();
               const canvasOffsetX = rect.left - currentMapRect.left;
               const canvasOffsetY = rect.top - currentMapRect.top;
-              ctx.drawImage(canvas, canvasOffsetX, canvasOffsetY);
+
+              // Check if canvas has content (not blank)
+              const testCtx = canvas.getContext('2d');
+              const imageData = testCtx.getImageData(0, 0, Math.min(canvas.width, 10), Math.min(canvas.height, 10));
+              let hasPixels = false;
+              for (let i = 3; i < imageData.data.length; i += 4) {
+                if (imageData.data[i] > 0) {
+                  hasPixels = true;
+                  break;
+                }
+              }
+
+              if (hasPixels) {
+                ctx.drawImage(canvas, canvasOffsetX, canvasOffsetY);
+                canvasesDrawn++;
+              } else {
+                canvasesSkipped++;
+              }
             } catch (e) {
               console.warn('Could not draw canvas:', e);
             }
           }
         });
+
+        // Debug: log canvas rendering info (iOS troubleshooting)
+        if (canvasesDrawn === 0 && currentCanvases.length > 0) {
+          console.warn(`⚠️ Warning: Found ${currentCanvases.length} canvases but none had content. Tracks may not appear in video.`);
+        }
 
         // 3. Draw track labels
         const labels = Array.from(mapContainer.querySelectorAll('.map-label'));
@@ -1807,8 +1833,52 @@
             // Wait for React to update and render
             await new Promise(resolve => requestAnimationFrame(resolve));
 
+            // Force Leaflet to redraw/invalidate (ensures polylines are rendered)
+            if (mapInstanceRef.current) {
+              mapInstanceRef.current.invalidateSize({ pan: false });
+              // Trigger a repaint by accessing the map's container
+              mapContainer.offsetHeight; // Force layout recalculation
+            }
+
             // Wait for tiles to load (1000ms with fast polling for quality + consistency)
             await waitForTilesToLoad(mapContainer, 1000);
+
+            // iOS/Safari Fix: Additional wait for canvas rendering
+            // Safari needs extra time to actually draw polylines to canvas elements
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
+            if (isIOS || isSafari) {
+              // Wait longer on iOS/Safari for canvas rendering to complete
+              await new Promise(resolve => setTimeout(resolve, 150));
+            } else {
+              // Shorter wait on other browsers
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
+
+            // Double-check canvases have content before capturing
+            const canvasCheck = Array.from(mapContainer.querySelectorAll('canvas'));
+            let hasContent = false;
+            canvasCheck.forEach(c => {
+              if (c.width > 0 && c.height > 0) {
+                const testCtx = c.getContext('2d');
+                const imageData = testCtx.getImageData(0, 0, Math.min(c.width, 10), Math.min(c.height, 10));
+                // Check if canvas has any non-transparent pixels
+                for (let i = 3; i < imageData.data.length; i += 4) {
+                  if (imageData.data[i] > 0) {
+                    hasContent = true;
+                    break;
+                  }
+                }
+              }
+            });
+
+            // If no canvas content detected on first few frames, wait a bit more
+            if (frame < 10 && !hasContent && (isIOS || isSafari)) {
+              console.log(`Frame ${frame}: No canvas content detected, waiting additional 200ms...`);
+              await new Promise(resolve => setTimeout(resolve, 200));
+            }
 
             // Capture frame to canvas
             captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks, legendPosition);
