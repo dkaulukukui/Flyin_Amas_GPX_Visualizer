@@ -501,7 +501,18 @@
     .rendering-message {
       font-size: 14px;
       color: #999;
-      margin-bottom: 30px;
+      margin-bottom: 20px;
+    }
+
+    .export-format-indicator {
+      font-size: 13px;
+      color: #fc4c02;
+      background: rgba(252, 76, 2, 0.1);
+      padding: 8px 16px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+      font-weight: 500;
+      border: 1px solid rgba(252, 76, 2, 0.3);
     }
 
     .progress-bar-container {
@@ -767,6 +778,11 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 1.7.0 - Major performance: Skip tile waiting entirely when zoom unchanged (requestAnimationFrame only), reduced zoom wait to 100ms + 1500ms tiles
+    // 1.6.9 - Performance: Smart tile loading - only wait 2000ms when zoom changes, otherwise 100ms (15x faster export for non-zoom frames)
+    // 1.6.8 - Fix zoom in exported videos: force synchronous Leaflet zoom update with _resetView(), increase tile wait to 2000ms, increase post-zoom wait to 150ms
+    // 1.6.7 - [REVERTED] MP4-specific timing delays made export worse
+    // 1.6.6 - Add video format indicator to export progress overlay showing which format is being created (MP4, WebM VP9, or WebM VP8)
     // 1.6.5 - Fix zoom-to-track in exported videos: remove invalidateSize from frame loop (was resetting zoom), add 100ms wait after zoom operations for tile loading
     // 1.6.4 - Fix zoom-to-track in exported videos: apply zoom logic during frame-by-frame rendering, not just browser playback
     // 1.6.3 - Performance: Reduced wait times from 150ms to 30ms (direct drawing eliminates canvas delays), fixed zoom-to-track by separating into independent useEffect
@@ -784,7 +800,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "1.6.5";
+    const APP_VERSION = "1.7.0";
 
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
@@ -805,6 +821,7 @@
       const [exportFPS, setExportFPS] = useState(30);
       const [isRendering, setIsRendering] = useState(false);
       const [renderProgress, setRenderProgress] = useState(0);
+      const [exportFormat, setExportFormat] = useState('');
       const [videoTitle, setVideoTitle] = useState('');
       const [titlePosition, setTitlePosition] = useState('top-left');
       const [titleSize, setTitleSize] = useState(24);
@@ -1785,6 +1802,7 @@
               mimeType = 'video/mp4';
               fileExtension = 'mp4';
               mp4Supported = true;
+              setExportFormat('MP4');
               console.log(`✓ Recording format: MP4 (${codec})`);
               console.log('→ Native MP4 output - no conversion needed!');
               break;
@@ -1798,17 +1816,20 @@
               options.mimeType = 'video/webm;codecs=vp9';
               mimeType = 'video/webm';
               fileExtension = 'webm';
+              setExportFormat('WebM (VP9)');
               console.log('✓ Recording format: WebM (VP9)');
             } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
               // WebM with VP8 codec (Safari, older browsers)
               options.mimeType = 'video/webm;codecs=vp8';
               mimeType = 'video/webm';
               fileExtension = 'webm';
+              setExportFormat('WebM (VP8)');
               console.log('✓ Recording format: WebM (VP8)');
             } else if (MediaRecorder.isTypeSupported('video/webm')) {
               // WebM with default codec
               options.mimeType = 'video/webm';
               fileExtension = 'webm';
+              setExportFormat('WebM');
               console.log('✓ Recording format: WebM (default codec)');
             }
 
@@ -1848,6 +1869,7 @@
               console.warn('No data recorded');
               setIsRendering(false);
               setIsRecording(false);
+              setExportFormat('');
               isRecordingRef.current = false;
               return;
             }
@@ -1891,6 +1913,7 @@
             // Cleanup
             setIsRendering(false);
             setIsRecording(false);
+            setExportFormat('');
             isRecordingRef.current = false;
 
             if (compositeStreamRef.current) {
@@ -1913,6 +1936,10 @@
           const totalFrames = Math.round(10 * targetFPS); // 10 seconds at selected FPS
           const videoTrack = stream.getVideoTracks()[0];
 
+          // Track zoom state to optimize tile loading
+          let lastZoomLevel = mapInstanceRef.current.getZoom();
+          let lastCenter = mapInstanceRef.current.getCenter();
+
           for (let frame = 0; frame <= totalFrames; frame++) {
             if (renderCancelledRef.current) {
               break;
@@ -1924,6 +1951,9 @@
 
             // Wait for React to update and render
             await new Promise(resolve => requestAnimationFrame(resolve));
+
+            // Track whether zoom changed this frame
+            let zoomChanged = false;
 
             // Apply zoom-to-track for this frame if enabled
             if (zoomToTrack && progressValue > 0 && progressValue < 100 && mapInstanceRef.current && tracks.length > 0) {
@@ -1990,8 +2020,20 @@
                   });
                 }
 
-                // Wait for zoom operation to complete and tiles to start loading
-                await new Promise(resolve => setTimeout(resolve, 100));
+                // Force Leaflet to immediately apply the zoom and start loading tiles
+                mapInstanceRef.current._resetView(mapInstanceRef.current.getCenter(), mapInstanceRef.current.getZoom());
+
+                // Check if zoom or center actually changed
+                const newZoom = mapInstanceRef.current.getZoom();
+                const newCenter = mapInstanceRef.current.getCenter();
+                if (newZoom !== lastZoomLevel || !newCenter.equals(lastCenter)) {
+                  zoomChanged = true;
+                  lastZoomLevel = newZoom;
+                  lastCenter = newCenter;
+                  // Wait for zoom and tiles
+                  await new Promise(resolve => setTimeout(resolve, 100));
+                  await waitForTilesToLoad(mapContainer, 1500);
+                }
               }
             } else if (progressValue === 0 || progressValue >= 100) {
               // Zoom out to show all tracks at start/end
@@ -2000,16 +2042,27 @@
                   padding: [50, 50],
                   animate: false
                 });
-                await new Promise(resolve => setTimeout(resolve, 100));
+                // Force Leaflet to immediately apply the zoom
+                mapInstanceRef.current._resetView(mapInstanceRef.current.getCenter(), mapInstanceRef.current.getZoom());
+
+                // Check if zoom or center actually changed
+                const newZoom = mapInstanceRef.current.getZoom();
+                const newCenter = mapInstanceRef.current.getCenter();
+                if (newZoom !== lastZoomLevel || !newCenter.equals(lastCenter)) {
+                  zoomChanged = true;
+                  lastZoomLevel = newZoom;
+                  lastCenter = newCenter;
+                  // Wait for zoom and tiles
+                  await new Promise(resolve => setTimeout(resolve, 100));
+                  await waitForTilesToLoad(mapContainer, 1500);
+                }
               }
             }
 
-            // Wait for tiles to load at the new zoom level (1000ms with fast polling for quality + consistency)
-            await waitForTilesToLoad(mapContainer, 1000);
-
-            // Small wait for any final rendering to settle
-            // Since we now draw tracks directly, we don't need long waits for canvas rendering
-            await new Promise(resolve => setTimeout(resolve, 30));
+            // If zoom didn't change, tiles are already loaded - just wait for render settle
+            if (!zoomChanged) {
+              await new Promise(resolve => requestAnimationFrame(resolve));
+            }
 
             // Capture frame to canvas
             captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks, legendPosition, progressValue, animationStyle, mapInstanceRef.current);
@@ -2058,6 +2111,7 @@
         isRecordingRef.current = false;
         setIsRendering(false);
         setIsRecording(false);
+        setExportFormat('');
 
         // Cleanup composite canvas if it exists
         if (compositeStreamRef.current) {
@@ -2517,6 +2571,11 @@
                       Please wait while frames are being captured with fully loaded map tiles.
                       This process ensures high-quality output.
                     </div>
+                    {exportFormat && (
+                      <div className="export-format-indicator">
+                        Format: {exportFormat}
+                      </div>
+                    )}
                     <div className="progress-text">{Math.round(renderProgress)}%</div>
                     <div className="progress-bar-container">
                       <div className="progress-bar-fill" style={{ width: `${renderProgress}%` }}></div>
