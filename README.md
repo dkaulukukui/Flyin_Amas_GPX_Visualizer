@@ -21,7 +21,7 @@ A beautiful, interactive web application for visualizing and animating GPS track
 
 ## Live Demo
 
-Visit: [https://yourusername.github.io/Flyin_Amas_GPX_Visializer/](https://yourusername.github.io/Flyin_Amas_GPX_Visializer/)
+Visit: [https://dkaulukukui.github.io/Flyin_Amas_GPX_Visualizer/](https://dkaulukukui.github.io/Flyin_Amas_GPX_Visualizer/)
 
 ## Usage
 
