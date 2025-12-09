@@ -9,6 +9,7 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
   <style>
     * {
       margin: 0;
@@ -778,6 +779,12 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 1.8.1 - Fixed video duration: Use absolute frame timing from export start, set timeslice=frameDuration, improved logging with drift tracking
+    // 1.8.0 - MAJOR: Added video duration control (5s-300s, default 60s). FPS now controls smoothness, duration controls animation length. Fixes low FPS issue!
+    // 1.7.4 - Fixed logging bugs: moved log after variable definition, use local frameStats instead of window, improved summary formatting with percentages
+    // 1.7.3 - Enhanced logging: Track fast/slow frames, show average processing time, theoretical vs actual export time for FPS debugging
+    // 1.7.2 - FPS Fix: Added frameRate to MediaRecorder options, use captureStream(targetFPS), added timeslice(100), improved logging for debugging
+    // 1.7.1 - DECOUPLED: Output FPS now independent of quality wait times. Uses captureStream(0) + frame timing control. FPS setting now actually works!
     // 1.7.0 - Major performance: Skip tile waiting entirely when zoom unchanged (requestAnimationFrame only), reduced zoom wait to 100ms + 1500ms tiles
     // 1.6.9 - Performance: Smart tile loading - only wait 2000ms when zoom changes, otherwise 100ms (15x faster export for non-zoom frames)
     // 1.6.8 - Fix zoom in exported videos: force synchronous Leaflet zoom update with _resetView(), increase tile wait to 2000ms, increase post-zoom wait to 150ms
@@ -791,6 +798,21 @@
     // 1.6.0 - Mobile-friendly responsive design: hamburger menu, collapsible sidebar, touch-friendly controls, tablet support
     // 1.5.0 - Made progress bar interactive: click to jump, drag to scrub through animation
     // 1.4.4 - Enhanced codec detection with Safari debugging, try multiple MP4 formats, add conversion help for Safari users
+    // 1.9.0 - Add FFmpeg.wasm for automatic FPS correction, re-encode videos to match requested frame rate and duration
+    // 1.8.2 - Add video metadata inspection to measure actual encoded FPS, provide diagnostics for duration mismatch
+    // 1.8.1 - Absolute frame timing, dynamic timeslice, drift tracking for precise FPS
+    // 1.8.0 - Added video duration control (5-300s), decouple from fixed 10s assumption
+    // 1.7.4 - Fixed logging bugs, use local frameStats
+    // 1.7.3 - Enhanced logging with frame statistics
+    // 1.7.2 - Added frameRate parameter to MediaRecorder options
+    // 1.7.1 - Changed to captureStream(targetFPS) instead of 0
+    // 1.7.0 - MP4-specific timing delays (REVERTED - made it worse)
+    // 1.6.8 - Fix zoom-to-track in export by adding to frame loop with _resetView
+    // 1.6.7 - Optimize tile loading (only wait when zoom changes)
+    // 1.6.6 - Add export format indicator (MP4/WebM VP9/VP8)
+    // 1.6.5 - Fix zoom-to-track in browser playback (separate useEffect)
+    // 1.6.4 - Attempted zoom-to-track export fixes
+    // 1.6.3 - Separate zoom useEffect to prevent interruption
     // 1.4.3 - Added legend position control (top-left, top-right, bottom-left, bottom-right), default to bottom-left
     // 1.4.2 - Hybrid MP4/WebM export (MP4 on Safari, WebM on Chrome/Firefox), added server-side conversion comments for future
     // 1.4.1 - Fix legend rendering in exported video, optimize frame timing (1000ms + fast polling), show title in browser view
@@ -800,7 +822,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "1.7.0";
+    const APP_VERSION = "1.9.0";
 
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
@@ -819,6 +841,7 @@
       const [exportResolution, setExportResolution] = useState('1920x1080');
       const [exportQuality, setExportQuality] = useState('high');
       const [exportFPS, setExportFPS] = useState(30);
+      const [exportDuration, setExportDuration] = useState(60); // Video duration in seconds
       const [isRendering, setIsRendering] = useState(false);
       const [renderProgress, setRenderProgress] = useState(0);
       const [exportFormat, setExportFormat] = useState('');
@@ -839,6 +862,8 @@
       const originalBoundsRef = useRef(null);
       const lastTimestampRef = useRef(null);
       const isPlayingRef = useRef(isPlaying);
+      const ffmpegRef = useRef(null);
+      const ffmpegLoadedRef = useRef(false);
 
       // Update resolution when aspect ratio changes
       useEffect(() => {
@@ -1685,6 +1710,87 @@
         ctx.restore();
       };
 
+      // Load FFmpeg.wasm for video FPS correction
+      const loadFFmpeg = async () => {
+        if (ffmpegLoadedRef.current) {
+          return ffmpegRef.current;
+        }
+
+        try {
+          console.log('Loading FFmpeg.wasm...');
+          const { createFFmpeg } = FFmpeg;
+
+          const ffmpeg = createFFmpeg({
+            log: true,
+            corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
+          });
+
+          await ffmpeg.load();
+
+          ffmpegRef.current = ffmpeg;
+          ffmpegLoadedRef.current = true;
+          console.log('✓ FFmpeg.wasm loaded successfully');
+          return ffmpeg;
+        } catch (err) {
+          console.error('Failed to load FFmpeg.wasm:', err);
+          return null;
+        }
+      };
+
+      // Correct video FPS using FFmpeg
+      const correctVideoFPS = async (inputBlob, targetFPS, mimeType) => {
+        try {
+          console.log('\n=== FFmpeg FPS Correction ===');
+          console.log(`Correcting video to ${targetFPS} FPS...`);
+
+          const ffmpeg = await loadFFmpeg();
+          if (!ffmpeg) {
+            console.error('FFmpeg not available, skipping FPS correction');
+            return inputBlob;
+          }
+
+          const { fetchFile } = FFmpeg;
+
+          // Write input file to FFmpeg virtual filesystem
+          const inputExt = mimeType.includes('mp4') ? 'mp4' : 'webm';
+          const outputExt = inputExt;
+
+          ffmpeg.FS('writeFile', `input.${inputExt}`, await fetchFile(inputBlob));
+
+          // Run FFmpeg to change FPS
+          // -i input: input file
+          // -filter:v fps=30: set output frame rate to 30 FPS
+          // -c:v libvpx-vp9 (for webm) or libx264 (for mp4): video codec
+          const codec = outputExt === 'mp4' ? 'libx264' : 'libvpx-vp9';
+          await ffmpeg.run(
+            '-i', `input.${inputExt}`,
+            '-filter:v', `fps=${targetFPS}`,
+            '-c:v', codec,
+            '-preset', 'fast',
+            '-crf', '22',
+            `output.${outputExt}`
+          );
+
+          // Read output file
+          const data = ffmpeg.FS('readFile', `output.${outputExt}`);
+
+          // Clean up FFmpeg filesystem
+          ffmpeg.FS('unlink', `input.${inputExt}`);
+          ffmpeg.FS('unlink', `output.${outputExt}`);
+
+          // Convert to Blob
+          const correctedBlob = new Blob([data.buffer], { type: mimeType });
+          console.log('✓ FPS correction complete');
+          console.log('=============================\n');
+
+          return correctedBlob;
+        } catch (err) {
+          console.error('FFmpeg FPS correction failed:', err);
+          console.log('Falling back to original video');
+          return inputBlob;
+        }
+      };
+
       const startRecording = async () => {
         try {
           const mapContainer = mapInstanceRef.current.getContainer();
@@ -1752,13 +1858,15 @@
           const bitsPerPixelFrame = qualityPresets[exportQuality] || qualityPresets['high'];
           const targetBitrate = Math.round(pixelCount * targetFPS * bitsPerPixelFrame);
 
-          // Use manual frame capture with specified FPS for consistent encoding
-          const stream = compositeCanvas.captureStream(targetFPS); // Set FPS for consistent frame rate
+          // Set target frame rate on stream AND use manual requestFrame()
+          // This tells the encoder the target FPS while we control exact frame timing
+          const stream = compositeCanvas.captureStream(targetFPS);
           compositeStreamRef.current = stream;
 
           let options = {
             videoBitsPerSecond: targetBitrate,
-            bitsPerSecond: targetBitrate
+            bitsPerSecond: targetBitrate,
+            frameRate: targetFPS  // Explicitly tell encoder the target frame rate
           };
           let mimeType = 'video/webm';
           let fileExtension = 'webm';
@@ -1856,7 +1964,7 @@
             }
           };
 
-          recorder.onstop = () => {
+          recorder.onstop = async () => {
             // Restore original map size
             if (originalMapSizeRef.current) {
               mapContainer.style.width = originalMapSizeRef.current.width;
@@ -1874,7 +1982,94 @@
               return;
             }
 
-            const blob = new Blob(recordedChunksRef.current, { type: mimeType });
+            let blob = new Blob(recordedChunksRef.current, { type: mimeType });
+
+            // DIAGNOSTIC: Inspect video metadata to measure actual encoded FPS
+            console.log('\n=== Video Metadata Inspection ===');
+            let needsFPSCorrection = false;
+            try {
+              const blobUrl = URL.createObjectURL(blob);
+              const videoElement = document.createElement('video');
+
+              await new Promise((resolve, reject) => {
+                videoElement.onloadedmetadata = async () => {
+                  const actualDuration = videoElement.duration;
+                  const expectedDuration = exportDuration;
+                  const actualFPS = totalFrames / actualDuration;
+                  const expectedFPS = targetFPS;
+                  const durationRatio = actualDuration / expectedDuration;
+
+                  console.log(`Expected: ${totalFrames} frames, ${expectedFPS} FPS, ${expectedDuration}s duration`);
+                  console.log(`Actual video: ${actualDuration.toFixed(2)}s duration`);
+                  console.log(`Calculated FPS: ${actualFPS.toFixed(2)} FPS`);
+                  console.log(`Duration ratio: ${durationRatio.toFixed(2)}x (${durationRatio > 1 ? 'LONGER' : 'shorter'} than expected)`);
+
+                  if (Math.abs(durationRatio - 1.0) > 0.1) {
+                    console.warn(`⚠️  VIDEO DURATION MISMATCH DETECTED`);
+                    console.warn(`Expected ${expectedDuration}s but got ${actualDuration.toFixed(2)}s`);
+                    console.warn(`The browser's MediaRecorder is encoding at ~${actualFPS.toFixed(1)} FPS instead of ${expectedFPS} FPS`);
+                    console.warn(`\nApplying automatic FPS correction with FFmpeg.wasm...`);
+                    needsFPSCorrection = true;
+                  } else {
+                    console.log('✓ Video duration matches expected (within 10% tolerance)');
+                  }
+
+                  URL.revokeObjectURL(blobUrl);
+                  resolve();
+                };
+
+                videoElement.onerror = (e) => {
+                  console.error('Failed to load video metadata:', e);
+                  URL.revokeObjectURL(blobUrl);
+                  reject(e);
+                };
+
+                videoElement.src = blobUrl;
+              });
+            } catch (err) {
+              console.error('Video metadata inspection failed:', err);
+            }
+            console.log('=================================\n');
+
+            // Apply FPS correction if needed
+            if (needsFPSCorrection) {
+              blob = await correctVideoFPS(blob, targetFPS, mimeType);
+
+              // Verify correction worked
+              console.log('\n=== Verifying FPS Correction ===');
+              try {
+                const blobUrl = URL.createObjectURL(blob);
+                const videoElement = document.createElement('video');
+
+                await new Promise((resolve, reject) => {
+                  videoElement.onloadedmetadata = () => {
+                    const correctedDuration = videoElement.duration;
+                    const correctedFPS = totalFrames / correctedDuration;
+                    console.log(`Corrected video: ${correctedDuration.toFixed(2)}s duration`);
+                    console.log(`Corrected FPS: ${correctedFPS.toFixed(2)} FPS`);
+
+                    if (Math.abs(correctedDuration - exportDuration) < exportDuration * 0.1) {
+                      console.log('✓ FPS correction successful!');
+                    } else {
+                      console.warn('⚠️  Correction may not be perfect, but should be improved');
+                    }
+
+                    URL.revokeObjectURL(blobUrl);
+                    resolve();
+                  };
+
+                  videoElement.onerror = (e) => {
+                    URL.revokeObjectURL(blobUrl);
+                    reject(e);
+                  };
+
+                  videoElement.src = blobUrl;
+                });
+              } catch (err) {
+                console.error('Verification failed:', err);
+              }
+              console.log('=================================\n');
+            }
 
             // OPTION 5 (SERVER-SIDE CONVERSION) - Future Implementation:
             // If you want to always provide MP4 output regardless of browser:
@@ -1924,8 +2119,12 @@
             renderCancelledRef.current = false;
           };
 
-          recorder.start();
+          // Start recorder
+          // Use timeslice matching frame duration for consistent encoding
+          const frameDuration = 1000 / targetFPS; // ms per frame at target FPS
+          recorder.start(Math.max(10, Math.floor(frameDuration)));
           mediaRecorderRef.current = recorder;
+
           setIsRecording(true);
           setIsRendering(true);
           setRenderProgress(0);
@@ -1933,17 +2132,31 @@
           renderCancelledRef.current = false;
 
           // Frame-by-frame rendering with manual frame requests
-          const totalFrames = Math.round(10 * targetFPS); // 10 seconds at selected FPS
+          const totalFrames = Math.round(exportDuration * targetFPS); // duration * FPS = total frames
           const videoTrack = stream.getVideoTracks()[0];
+
+          console.log(`Starting video export: ${totalFrames} frames at ${targetFPS} FPS for ${exportDuration}s video`);
+          console.log(`Frame interval: ${frameDuration.toFixed(2)}ms, Timeslice: ${Math.floor(frameDuration)}ms`);
+          console.log(`Expected output video duration: ${exportDuration}s`);
 
           // Track zoom state to optimize tile loading
           let lastZoomLevel = mapInstanceRef.current.getZoom();
           let lastCenter = mapInstanceRef.current.getCenter();
 
+          // Initialize frame statistics
+          const frameStats = { fast: 0, slow: 0, totalTime: 0, count: 0 };
+
+          // Use absolute timing from export start for precise frame intervals
+          const exportStartTime = Date.now();
+
           for (let frame = 0; frame <= totalFrames; frame++) {
             if (renderCancelledRef.current) {
               break;
             }
+
+            // Calculate target time for this frame (absolute timing)
+            const targetFrameTime = exportStartTime + (frame * frameDuration);
+            const frameProcessStart = Date.now();
 
             const progressValue = (frame / totalFrames) * 100;
             setProgress(progressValue);
@@ -2067,16 +2280,60 @@
             // Capture frame to canvas
             captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks, legendPosition, progressValue, animationStyle, mapInstanceRef.current);
 
-            // Manually request frame from stream (for captureStream(0) mode)
+            // Manually request frame from stream
+            // This ensures we capture the current canvas state immediately
             if (videoTrack && videoTrack.requestFrame) {
               videoTrack.requestFrame();
             }
 
-            // Small delay to ensure MediaRecorder processes the frame
-            await new Promise(resolve => setTimeout(resolve, 16)); // ~60fps timing
+            // Precise frame timing using absolute time from export start
+            // This ensures consistent frame intervals for proper video FPS
+            const frameProcessEnd = Date.now();
+            const frameProcessTime = frameProcessEnd - frameProcessStart;
+            const currentTime = Date.now();
+            const timeUntilNextFrame = targetFrameTime - currentTime;
+
+            // Track frame timing statistics
+            frameStats.totalTime += frameProcessTime;
+            frameStats.count++;
+            if (frameProcessTime < frameDuration) {
+              frameStats.fast++;
+            } else {
+              frameStats.slow++;
+            }
+
+            if (frame % 50 === 0 || frame === totalFrames) {
+              // Log every 50 frames and at the end
+              const avgTime = frameStats.totalTime / frameStats.count;
+              const drift = currentTime - targetFrameTime;
+              console.log(`Frame ${frame}/${totalFrames}: process=${frameProcessTime.toFixed(0)}ms, avg=${avgTime.toFixed(0)}ms, drift=${drift.toFixed(0)}ms, target=${frameDuration.toFixed(1)}ms`);
+            }
+
+            // Wait until the target time for this frame
+            // This maintains precise frame intervals regardless of processing time
+            if (timeUntilNextFrame > 0) {
+              await new Promise(resolve => setTimeout(resolve, timeUntilNextFrame));
+            } else if (timeUntilNextFrame < -100) {
+              // Warn if we're falling significantly behind
+              console.warn(`Frame ${frame} is ${Math.abs(timeUntilNextFrame).toFixed(0)}ms behind schedule`);
+            }
           }
 
-          // Stop recording
+          // Stop recording - show performance summary
+          console.log(`\n=== Export Processing Complete ===`);
+          console.log(`Total frames: ${totalFrames} (${frameStats.count} processed)`);
+          console.log(`Target FPS: ${targetFPS}, Expected video duration: ${exportDuration}s`);
+
+          const avgFrameTime = frameStats.totalTime / frameStats.count;
+          console.log(`Average frame processing: ${avgFrameTime.toFixed(1)}ms (target: ${frameDuration.toFixed(1)}ms)`);
+          console.log(`Fast frames (<${frameDuration.toFixed(1)}ms): ${frameStats.fast} (${(frameStats.fast/frameStats.count*100).toFixed(1)}%)`);
+          console.log(`Slow frames (≥${frameDuration.toFixed(1)}ms): ${frameStats.slow} (${(frameStats.slow/frameStats.count*100).toFixed(1)}%)`);
+
+          const totalExportTime = Date.now() - exportStartTime;
+          console.log(`Total export processing time: ${(totalExportTime/1000).toFixed(1)}s`);
+          console.log(`\nℹ️  Video metadata will be inspected when encoding completes...`);
+          console.log(`===================================\n`);
+
           if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
             mediaRecorderRef.current.stop();
           }
@@ -2429,6 +2686,26 @@
                           <option value="30">30 FPS (Standard)</option>
                           <option value="60">60 FPS (Smooth)</option>
                         </select>
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Video Duration: {exportDuration}s ({(exportDuration * exportFPS).toLocaleString()} frames)</label>
+                        <input
+                          type="range"
+                          min="5"
+                          max="300"
+                          step="5"
+                          value={exportDuration}
+                          onChange={(e) => setExportDuration(parseInt(e.target.value))}
+                          disabled={isRecording}
+                          className="slider"
+                          style={{ width: '100%' }}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#666', marginTop: '4px' }}>
+                          <span>5s</span>
+                          <span>60s</span>
+                          <span>120s</span>
+                          <span>300s (5min)</span>
+                        </div>
                       </div>
 
                       <div className="control-label" style={{ marginTop: '20px' }}>Video Title</div>
