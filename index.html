@@ -308,6 +308,14 @@
       border-radius: 4px;
       overflow: hidden;
       margin-top: 10px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+
+    .progress-bar:hover {
+      background: #666;
+      height: 10px;
+      margin-top: 9px;
     }
     
     .progress-fill {
@@ -528,6 +536,8 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 1.5.0 - Made progress bar interactive: click to jump, drag to scrub through animation
+    // 1.4.4 - Enhanced codec detection with Safari debugging, try multiple MP4 formats, add conversion help for Safari users
     // 1.4.3 - Added legend position control (top-left, top-right, bottom-left, bottom-right), default to bottom-left
     // 1.4.2 - Hybrid MP4/WebM export (MP4 on Safari, WebM on Chrome/Firefox), added server-side conversion comments for future
     // 1.4.1 - Fix legend rendering in exported video, optimize frame timing (1000ms + fast polling), show title in browser view
@@ -537,7 +547,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "1.4.3";
+    const APP_VERSION = "1.5.0";
 
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
@@ -1015,6 +1025,46 @@
         lastTimestampRef.current = null;
       };
 
+      // Handle progress bar scrubbing (click/drag to seek)
+      const handleProgressBarClick = (e) => {
+        const progressBar = e.currentTarget;
+        const rect = progressBar.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const newProgress = (clickX / rect.width) * 100;
+        setProgress(Math.max(0, Math.min(100, newProgress)));
+        // Pause animation when manually seeking
+        setIsPlaying(false);
+      };
+
+      const handleProgressBarMouseDown = (e) => {
+        const progressBar = e.currentTarget;
+        const wasPaused = !isPlaying;
+        setIsPlaying(false); // Pause during drag
+
+        const updateProgress = (clientX) => {
+          const rect = progressBar.getBoundingClientRect();
+          const dragX = clientX - rect.left;
+          const newProgress = (dragX / rect.width) * 100;
+          setProgress(Math.max(0, Math.min(100, newProgress)));
+        };
+
+        const handleMouseMove = (e) => {
+          updateProgress(e.clientX);
+        };
+
+        const handleMouseUp = () => {
+          document.removeEventListener('mousemove', handleMouseMove);
+          document.removeEventListener('mouseup', handleMouseUp);
+          // Don't auto-resume playing after drag
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+
+        // Update progress immediately on mouse down
+        updateProgress(e.clientX);
+      };
+
       const compositeCanvasRef = useRef(null);
       const compositeStreamRef = useRef(null);
       const isRecordingRef = useRef(false);
@@ -1336,32 +1386,82 @@
           let mimeType = 'video/webm';
           let fileExtension = 'webm';
 
-          // HYBRID APPROACH: Try MP4 first (Safari/iOS), fallback to WebM (Chrome/Firefox)
-          // MP4 provides better compatibility with video players, editors, and social media
-          // WebM provides better compression and is patent-free
-          if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
-            // MP4 with H.264 codec (supported mainly on Safari/iOS)
-            options.mimeType = 'video/mp4;codecs=h264';
-            mimeType = 'video/mp4';
-            fileExtension = 'mp4';
-            console.log('Recording format: MP4 (H.264)');
-          } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
-            // WebM with VP9 codec (best quality, Chrome/Firefox)
-            options.mimeType = 'video/webm;codecs=vp9';
-            mimeType = 'video/webm';
-            fileExtension = 'webm';
-            console.log('Recording format: WebM (VP9)');
-          } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
-            // WebM with VP8 codec (fallback)
-            options.mimeType = 'video/webm;codecs=vp8';
-            mimeType = 'video/webm';
-            fileExtension = 'webm';
-            console.log('Recording format: WebM (VP8)');
-          } else if (MediaRecorder.isTypeSupported('video/webm')) {
-            // WebM with default codec
-            options.mimeType = 'video/webm';
-            fileExtension = 'webm';
-            console.log('Recording format: WebM (default)');
+          // CODEC DETECTION & BROWSER COMPATIBILITY
+          // Note: Safari does NOT support MP4/H.264 recording via MediaRecorder (as of 2025)
+          // Safari only supports WebM (usually VP8, sometimes VP9)
+          // This is a Safari/WebKit limitation, not a bug in this code
+
+          // Debug: Log all supported formats (check browser console)
+          console.log('=== Codec Support Detection ===');
+          const testCodecs = [
+            'video/mp4',
+            'video/mp4;codecs=h264',
+            'video/mp4;codecs=avc1',
+            'video/mp4;codecs=avc1.42E01E',
+            'video/webm',
+            'video/webm;codecs=vp9',
+            'video/webm;codecs=vp8',
+            'video/webm;codecs=h264'
+          ];
+          testCodecs.forEach(codec => {
+            const supported = MediaRecorder.isTypeSupported(codec);
+            console.log(`${codec}: ${supported ? '✓ SUPPORTED' : '✗ not supported'}`);
+          });
+          console.log('==============================');
+
+          // Try multiple MP4 formats (Safari may use different codec strings)
+          // Note: As of 2025, no version of Safari supports MP4 recording
+          const mp4Codecs = [
+            'video/mp4;codecs=avc1.42E01E',  // H.264 baseline profile
+            'video/mp4;codecs=avc1',         // Generic AVC/H.264
+            'video/mp4;codecs=h264',         // Alternative H.264 format
+            'video/mp4'                      // Generic MP4
+          ];
+
+          let mp4Supported = false;
+          for (const codec of mp4Codecs) {
+            if (MediaRecorder.isTypeSupported(codec)) {
+              options.mimeType = codec;
+              mimeType = 'video/mp4';
+              fileExtension = 'mp4';
+              mp4Supported = true;
+              console.log(`✓ Recording format: MP4 (${codec})`);
+              console.log('→ Native MP4 output - no conversion needed!');
+              break;
+            }
+          }
+
+          // Fallback to WebM (Chrome, Firefox, Safari)
+          if (!mp4Supported) {
+            if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+              // WebM with VP9 codec (best quality, Chrome/Firefox)
+              options.mimeType = 'video/webm;codecs=vp9';
+              mimeType = 'video/webm';
+              fileExtension = 'webm';
+              console.log('✓ Recording format: WebM (VP9)');
+            } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+              // WebM with VP8 codec (Safari, older browsers)
+              options.mimeType = 'video/webm;codecs=vp8';
+              mimeType = 'video/webm';
+              fileExtension = 'webm';
+              console.log('✓ Recording format: WebM (VP8)');
+            } else if (MediaRecorder.isTypeSupported('video/webm')) {
+              // WebM with default codec
+              options.mimeType = 'video/webm';
+              fileExtension = 'webm';
+              console.log('✓ Recording format: WebM (default codec)');
+            }
+
+            // Safari users: explain why they're getting WebM
+            const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+            if (isSafari) {
+              console.log('→ Safari detected: MP4 recording not supported by Safari/WebKit');
+              console.log('→ To convert WebM to MP4:');
+              console.log('  • Use FFmpeg: ffmpeg -i video.webm -c:v libx264 video.mp4');
+              console.log('  • Or online: https://cloudconvert.com/webm-to-mp4');
+            } else {
+              console.log('→ WebM output - use FFmpeg or CloudConvert to convert to MP4 if needed');
+            }
           }
 
           console.log(`Export settings: ${exportWidth}x${exportHeight} @ ${targetFPS}fps, ${(targetBitrate/1000000).toFixed(1)} Mbps, ${exportQuality} quality`);
@@ -1632,8 +1732,13 @@
                           ↺ Reset
                         </button>
                       </div>
-                      <div className="progress-bar">
-                        <div 
+                      <div
+                        className="progress-bar"
+                        onClick={handleProgressBarClick}
+                        onMouseDown={handleProgressBarMouseDown}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <div
                           className="progress-fill"
                           style={{ width: `${progress}%` }}
                         />
