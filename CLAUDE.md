@@ -24,11 +24,11 @@ The entire application is contained in `index.html` with this organization:
    - Uses React hooks exclusively (no class components)
    - JSX transpiled in-browser using Babel Standalone
 
-3. **Version Management** (lines ~786-839)
+3. **Version Management** (lines ~786-840)
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 2.1.3 (as of last update)
+   - Current version: 2.1.4 (as of last update)
 
 ### Key Technical Patterns
 
@@ -83,6 +83,12 @@ Two animation modes with different timestamp handling:
 #### Video Export Architecture
 
 **CRITICAL DESIGN**: Two-phase export system (v2.1.x)
+
+**Platform Limitations**:
+- **iOS Detection** (v2.1.4): Export blocked on iOS devices (iPhone/iPad) due to MediaRecorder API limitations
+- Detection checks: `navigator.userAgent` for iOS devices and `navigator.platform === 'MacIntel'` with touch points for iPad
+- iOS users shown instructions for screen recording instead
+- Desktop browsers fully supported
 
 **Why this approach**:
 - Map tiles load asynchronously and may not be ready during real-time capture
@@ -225,9 +231,15 @@ Primary brand color `#fc4c02` used for:
 - Canvas becomes "tainted" if non-CORS images drawn
 
 ### Browser Compatibility
-- Requires `MediaRecorder` API (Chrome, Firefox, Edge)
-- Safari may have WebM codec issues
+**Desktop:**
+- Requires `MediaRecorder` API (Chrome, Firefox, Edge, Safari on macOS)
+- Safari may have WebM codec issues (no MP4 support)
 - Canvas `captureStream()` required for video export
+
+**Mobile:**
+- **iOS**: Animation works, but video export **NOT supported** (MediaRecorder API unavailable)
+- iOS detection added in v2.1.4 - shows screen recording instructions instead
+- **Android**: May work depending on browser, not extensively tested
 
 ### Performance Considerations
 - Large GPX files (>10,000 points) may slow animation
@@ -241,6 +253,13 @@ Primary brand color `#fc4c02` used for:
 ## Debugging
 
 ### Common Issues
+
+**Video export not working on iOS**:
+- This is expected behavior as of v2.1.4
+- iOS Safari does not support MediaRecorder API
+- Alert message automatically shown to iOS users with screen recording instructions
+- No code fix possible - platform limitation
+- Users should use iOS Screen Recording or switch to desktop browser
 
 **Video has wrong FPS or duration**:
 - Check console logs for "Phase 1 complete" and "Phase 2: Playing back"
@@ -288,13 +307,14 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 2.1.3**
+**Current Version: 2.1.4**
 
 ### Major Achievements (v2.1.x)
 - ✅ **Solved FPS Problem**: Videos now export at exactly the specified FPS and duration
 - ✅ **Two-Phase Export**: Pre-rendering phase + playback phase ensures quality and timing
 - ✅ **Visual Completeness**: Position markers, full track preview, map tiles all included
 - ✅ **Browser Playback Match**: Export output matches browser preview exactly
+- ✅ **iOS Compatibility Handling**: Gracefully blocks iOS export with helpful instructions
 
 ### Technical Journey
 - **v1.x**: Initial implementation, struggled with FPS accuracy
@@ -304,6 +324,7 @@ No build process required - single HTML file is the entire app.
 - **v2.1.1**: Critical fix - start recording only during Phase 2
 - **v2.1.2**: Added position markers and full track preview to exports
 - **v2.1.3**: Fixed `showAllTracks` toggle to work in browser playback
+- **v2.1.4**: Added iOS detection to prevent export failures and guide users to screen recording
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS. The two-phase approach decouples slow tile loading (Phase 1) from precise timing requirements (Phase 2), solving the fundamental problem that plagued earlier versions.

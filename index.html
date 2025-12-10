@@ -785,6 +785,7 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 2.1.4 - Add iOS detection: Block video export on iOS devices (MediaRecorder API not supported), provide screen recording instructions instead
     // 2.1.3 - Fix showAllTracks toggle: Now properly controls full track preview in browser playback, matching export behavior (track color @ 30% opacity)
     // 2.1.2 - Add position markers (white circles) and full track preview to exported videos. Enhanced drawTracksDirect to render complete visual elements.
     // 2.1.1 - CRITICAL FIX: Start MediaRecorder only during Phase 2 playback (not Phase 1 pre-render). Prevents recording the pre-render process.
@@ -836,7 +837,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "2.1.3";
+    const APP_VERSION = "2.1.4";
 
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
@@ -1843,6 +1844,25 @@
 
       const startRecording = async () => {
         try {
+          // Detect iOS devices (iPhone, iPad, iPod)
+          const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPad on iOS 13+
+
+          if (isIOS) {
+            // iOS doesn't support MediaRecorder API properly - show helpful message
+            alert(
+              '📱 Video Export Not Available on iOS\n\n' +
+              'Unfortunately, iOS Safari does not support the MediaRecorder API needed for video export.\n\n' +
+              '✅ How to Record on iOS:\n' +
+              '1. Open Control Center (swipe down from top-right)\n' +
+              '2. Tap the Screen Recording button (circle icon)\n' +
+              '3. Start your animation playback\n' +
+              '4. Recording saves to Photos app\n\n' +
+              '💻 Alternative: Use a desktop browser (Chrome, Firefox, or Safari on Mac) for built-in video export.'
+            );
+            return;
+          }
+
           const mapContainer = mapInstanceRef.current.getContainer();
           const initialCanvases = Array.from(mapContainer.querySelectorAll('canvas'));
 

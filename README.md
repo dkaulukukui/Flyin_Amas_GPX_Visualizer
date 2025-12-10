@@ -3,7 +3,7 @@
 A beautiful, interactive web application for visualizing and animating GPS tracks from GPX files. Perfect for showcasing Strava activities, outdoor adventures, or any GPS-recorded journey.
 
 ![GPX Track Animator](https://img.shields.io/badge/Status-Active-success)
-![Version](https://img.shields.io/badge/Version-2.1.3-blue)
+![Version](https://img.shields.io/badge/Version-2.1.4-blue)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
 ## What's New in v2.1
@@ -90,6 +90,16 @@ The application uses a sophisticated two-phase export system to ensure perfect v
 - For quick tests, use shorter durations (10-20s) and lower resolutions (720p)
 - Close other browser tabs to free up memory for large exports
 
+**iOS/Mobile Limitations:**
+- ⚠️ **Video export is not available on iOS devices** (iPhone, iPad)
+- iOS Safari does not support the MediaRecorder API required for video export
+- **iOS Users:** Use the built-in Screen Recording feature instead:
+  1. Open Control Center (swipe down from top-right on newer devices, or up from bottom on older ones)
+  2. Tap the Screen Recording button (circle icon)
+  3. Start your animation playback in the browser
+  4. Recording automatically saves to your Photos app
+- **Alternative:** Use a desktop browser (Chrome, Firefox, or Safari on Mac) for full video export features
+
 ## Deployment
 
 ### GitHub Pages (Recommended - FREE)
@@ -145,9 +155,14 @@ npx http-server
 
 ## Browser Support
 
-- **Chrome/Edge** (recommended) - Full feature support
-- **Firefox** - Full feature support
-- **Safari** - Full feature support (WebM may require conversion)
+### Desktop
+- **Chrome/Edge** (recommended) - Full feature support including video export
+- **Firefox** - Full feature support including video export
+- **Safari (macOS)** - Full feature support (WebM format for video export)
+
+### Mobile
+- **iOS (iPhone/iPad)** - ⚠️ Animation and viewing work perfectly, but **video export is not supported** due to iOS Safari limitations. Use iOS Screen Recording instead.
+- **Android** - Animation works, video export may work depending on browser (Chrome recommended)
 
 ## Privacy
 
