@@ -785,8 +785,9 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
-    // 1.9.3 - CRITICAL FPS FIX v2: Call requestFrame() at precise intervals (targetTime = startTime + frame * frameDuration). MediaRecorder timestamps based on requestFrame() timing.
-    // 1.9.2 - FPS attempt: Use captureStream(0) + sequential capture (did not work - frames need precise timing)
+    // 2.0.0 - COMPLETE EXPORT REWRITE: Use captureStream(targetFPS) for auto-capture at correct rate. Canvas updates continuously, stream captures automatically. Export runs in real-time.
+    // 1.9.3 - FPS attempt: Manual requestFrame() with precise timing (did not work - MediaRecorder doesn't preserve timing from manual calls)
+    // 1.9.2 - FPS attempt: captureStream(0) + sequential capture (did not work - frames need timed intervals)
     // 1.9.1 - Enhanced cancel button visibility in export progress popup with better spacing and sizing
     // 1.8.1 - Fixed video duration: Use absolute frame timing from export start, set timeslice=frameDuration, improved logging with drift tracking
     // 1.8.0 - MAJOR: Added video duration control (5s-300s, default 60s). FPS now controls smoothness, duration controls animation length. Fixes low FPS issue!
@@ -831,7 +832,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "1.9.3";
+    const APP_VERSION = "2.0.0";
 
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
@@ -1867,10 +1868,10 @@
           const bitsPerPixelFrame = qualityPresets[exportQuality] || qualityPresets['high'];
           const targetBitrate = Math.round(pixelCount * targetFPS * bitsPerPixelFrame);
 
-          // Use captureStream(0) for manual-only frame capture
-          // This ensures frames arrive at MediaRecorder at consistent intervals
-          // The frameRate option tells MediaRecorder what FPS to encode
-          const stream = compositeCanvas.captureStream(0);
+          // Use captureStream(targetFPS) for automatic frame capture at specified rate
+          // This ensures MediaRecorder receives frames at the correct FPS
+          // The browser handles timing automatically
+          const stream = compositeCanvas.captureStream(targetFPS);
           compositeStreamRef.current = stream;
 
           let options = {
@@ -2141,36 +2142,39 @@
           isRecordingRef.current = true;
           renderCancelledRef.current = false;
 
-          // Frame-by-frame rendering with precise timing
-          // CRITICAL: requestFrame() must be called at exact intervals for correct FPS
-          // MediaRecorder timestamps frames based on when requestFrame() is called
-          const totalFrames = Math.round(exportDuration * targetFPS); // duration * FPS = total frames
-          const videoTrack = stream.getVideoTracks()[0];
+          // Real-time canvas update with auto-capture stream
+          // captureStream(targetFPS) automatically captures frames at the specified rate
+          // We just need to update the canvas continuously, and the stream handles timing
+          const totalFrames = Math.round(exportDuration * targetFPS);
+          const updateInterval = frameDuration / 2; // Update canvas 2x faster than capture rate
 
-          console.log(`Starting video export: ${totalFrames} frames at ${targetFPS} FPS for ${exportDuration}s video`);
-          console.log(`Frame interval: ${frameDuration.toFixed(2)}ms - requestFrame() will be called at precise intervals`);
-          console.log(`Expected output video duration: ${exportDuration}s`);
+          console.log(`Starting video export: ${exportDuration}s at ${targetFPS} FPS`);
+          console.log(`captureStream will auto-capture at ${targetFPS} FPS`);
+          console.log(`Canvas update interval: ${updateInterval.toFixed(1)}ms (2x capture rate)`);
+          console.log(`⏱️  Export will take ~${exportDuration}s in real-time`);
 
-          // Track zoom state to optimize tile loading
+          // Track zoom state
           let lastZoomLevel = mapInstanceRef.current.getZoom();
           let lastCenter = mapInstanceRef.current.getCenter();
 
-          // Initialize frame statistics
-          const frameStats = { fast: 0, slow: 0, totalTime: 0, count: 0 };
           const exportStartTime = Date.now();
+          let updateCount = 0;
 
-          for (let frame = 0; frame <= totalFrames; frame++) {
-            if (renderCancelledRef.current) {
-              break;
-            }
+          // Canvas update loop - runs continuously during export
+          const updateCanvas = async () => {
+            while (!renderCancelledRef.current) {
+              const elapsed = (Date.now() - exportStartTime) / 1000; // seconds
 
-            // Calculate exact time when this frame should be captured
-            const targetCaptureTime = exportStartTime + (frame * frameDuration);
-            const frameProcessStart = Date.now();
+              if (elapsed >= exportDuration) {
+                break; // Export duration reached
+              }
 
-            const progressValue = (frame / totalFrames) * 100;
-            setProgress(progressValue);
-            setRenderProgress(progressValue);
+              const frameProcessStart = Date.now();
+              const progressValue = (elapsed / exportDuration) * 100;
+
+              setProgress(progressValue);
+              setRenderProgress(progressValue);
+              updateCount++;
 
             // Wait for React to update and render
             await new Promise(resolve => requestAnimationFrame(resolve));
@@ -2287,58 +2291,33 @@
               await new Promise(resolve => requestAnimationFrame(resolve));
             }
 
-            // Capture frame to canvas
-            captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks, legendPosition, progressValue, animationStyle, mapInstanceRef.current);
+              // Capture frame to canvas (captureStream will auto-capture from this)
+              captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks, legendPosition, progressValue, animationStyle, mapInstanceRef.current);
 
-            // Wait until exact target capture time, then call requestFrame()
-            // This ensures frames are captured at precise intervals for correct FPS
-            const now = Date.now();
-            const waitTime = targetCaptureTime - now;
+              // Log progress periodically
+              if (updateCount % 30 === 0) {
+                console.log(`Export progress: ${progressValue.toFixed(1)}% (${elapsed.toFixed(1)}s / ${exportDuration}s)`);
+              }
 
-            if (waitTime > 0) {
-              await new Promise(resolve => setTimeout(resolve, waitTime));
+              // Wait for next update interval
+              const frameProcessEnd = Date.now();
+              const frameProcessTime = frameProcessEnd - frameProcessStart;
+              const nextUpdateWait = Math.max(0, updateInterval - frameProcessTime);
+
+              await new Promise(resolve => setTimeout(resolve, nextUpdateWait));
             }
+          };
 
-            // Call requestFrame() at the exact target time
-            // MediaRecorder timestamps frames based on when this is called
-            if (videoTrack && videoTrack.requestFrame) {
-              videoTrack.requestFrame();
-            }
+          // Start canvas update loop
+          await updateCanvas();
 
-            // Give MediaRecorder time to process the frame (requestFrame is async)
-            await new Promise(resolve => setTimeout(resolve, 10));
-
-            // Track frame timing for logging
-            const frameProcessEnd = Date.now();
-            const frameProcessTime = frameProcessEnd - frameProcessStart;
-            const captureTimeDrift = frameProcessEnd - targetCaptureTime;
-
-            frameStats.totalTime += frameProcessTime;
-            frameStats.count++;
-            if (frameProcessTime < frameDuration) {
-              frameStats.fast++;
-            } else {
-              frameStats.slow++;
-            }
-
-            if (frame % 50 === 0 || frame === totalFrames) {
-              const avgTime = frameStats.totalTime / frameStats.count;
-              console.log(`Frame ${frame}/${totalFrames}: process=${frameProcessTime.toFixed(0)}ms, drift=${captureTimeDrift.toFixed(1)}ms, avg=${avgTime.toFixed(0)}ms`);
-            }
-          }
-
-          // Stop recording - show performance summary
-          console.log(`\n=== Export Processing Complete ===`);
-          console.log(`Total frames: ${totalFrames} (${frameStats.count} processed)`);
-          console.log(`Target FPS: ${targetFPS}, Expected video duration: ${exportDuration}s`);
-
-          const avgFrameTime = frameStats.totalTime / frameStats.count;
-          console.log(`Average frame processing: ${avgFrameTime.toFixed(1)}ms (target: ${frameDuration.toFixed(1)}ms)`);
-          console.log(`Fast frames (<${frameDuration.toFixed(1)}ms): ${frameStats.fast} (${(frameStats.fast/frameStats.count*100).toFixed(1)}%)`);
-          console.log(`Slow frames (≥${frameDuration.toFixed(1)}ms): ${frameStats.slow} (${(frameStats.slow/frameStats.count*100).toFixed(1)}%)`);
-
+          // Stop recording - show summary
           const totalExportTime = Date.now() - exportStartTime;
-          console.log(`Total export processing time: ${(totalExportTime/1000).toFixed(1)}s`);
+          console.log(`\n=== Export Complete ===`);
+          console.log(`Canvas updates: ${updateCount}`);
+          console.log(`Expected frames captured: ${totalFrames} at ${targetFPS} FPS`);
+          console.log(`Expected video duration: ${exportDuration}s`);
+          console.log(`Export took: ${(totalExportTime/1000).toFixed(1)}s (real-time)`);
           console.log(`\nℹ️  Video metadata will be inspected when encoding completes...`);
           console.log(`===================================\n`);
 
