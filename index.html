@@ -785,9 +785,10 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
-    // 2.0.0 - COMPLETE EXPORT REWRITE: Use captureStream(targetFPS) for auto-capture at correct rate. Canvas updates continuously, stream captures automatically. Export runs in real-time.
-    // 1.9.3 - FPS attempt: Manual requestFrame() with precise timing (did not work - MediaRecorder doesn't preserve timing from manual calls)
-    // 1.9.2 - FPS attempt: captureStream(0) + sequential capture (did not work - frames need timed intervals)
+    // 2.1.0 - TWO-PHASE EXPORT: Phase 1 pre-renders all frames (waits for tiles), Phase 2 plays back at exact FPS. Guarantees correct frame rate and duration.
+    // 2.0.0 - Real-time capture attempt (failed - tile loading too slow, only got 7 FPS)
+    // 1.9.3 - Manual requestFrame() with timing (failed - no timing metadata preserved)
+    // 1.9.2 - captureStream(0) sequential (failed - frames need timed intervals)
     // 1.9.1 - Enhanced cancel button visibility in export progress popup with better spacing and sizing
     // 1.8.1 - Fixed video duration: Use absolute frame timing from export start, set timeslice=frameDuration, improved logging with drift tracking
     // 1.8.0 - MAJOR: Added video duration control (5s-300s, default 60s). FPS now controls smoothness, duration controls animation length. Fixes low FPS issue!
@@ -832,7 +833,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "2.0.0";
+    const APP_VERSION = "2.1.0";
 
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
@@ -2142,39 +2143,30 @@
           isRecordingRef.current = true;
           renderCancelledRef.current = false;
 
-          // Real-time canvas update with auto-capture stream
-          // captureStream(targetFPS) automatically captures frames at the specified rate
-          // We just need to update the canvas continuously, and the stream handles timing
+          // TWO-PHASE EXPORT: Pre-render frames, then play back at correct FPS
+          // Phase 1: Render all frames (slow, waits for tiles)
+          // Phase 2: Play back frames at exact FPS while capturing
           const totalFrames = Math.round(exportDuration * targetFPS);
-          const updateInterval = frameDuration / 2; // Update canvas 2x faster than capture rate
 
-          console.log(`Starting video export: ${exportDuration}s at ${targetFPS} FPS`);
-          console.log(`captureStream will auto-capture at ${targetFPS} FPS`);
-          console.log(`Canvas update interval: ${updateInterval.toFixed(1)}ms (2x capture rate)`);
-          console.log(`⏱️  Export will take ~${exportDuration}s in real-time`);
+          console.log(`Starting 2-phase video export: ${totalFrames} frames at ${targetFPS} FPS`);
+          console.log(`Phase 1: Pre-rendering ${totalFrames} frames (waits for tiles)`);
 
           // Track zoom state
           let lastZoomLevel = mapInstanceRef.current.getZoom();
           let lastCenter = mapInstanceRef.current.getCenter();
 
           const exportStartTime = Date.now();
-          let updateCount = 0;
+          const renderedFrames = []; // Array to store rendered frame ImageData
 
-          // Canvas update loop - runs continuously during export
-          const updateCanvas = async () => {
-            while (!renderCancelledRef.current) {
-              const elapsed = (Date.now() - exportStartTime) / 1000; // seconds
+          // PHASE 1: Pre-render all frames
+          for (let frame = 0; frame <= totalFrames; frame++) {
+            if (renderCancelledRef.current) {
+              break;
+            }
 
-              if (elapsed >= exportDuration) {
-                break; // Export duration reached
-              }
-
-              const frameProcessStart = Date.now();
-              const progressValue = (elapsed / exportDuration) * 100;
-
-              setProgress(progressValue);
-              setRenderProgress(progressValue);
-              updateCount++;
+            const progressValue = (frame / totalFrames) * 100;
+            setProgress(progressValue);
+            setRenderProgress(progressValue);
 
             // Wait for React to update and render
             await new Promise(resolve => requestAnimationFrame(resolve));
@@ -2291,33 +2283,72 @@
               await new Promise(resolve => requestAnimationFrame(resolve));
             }
 
-              // Capture frame to canvas (captureStream will auto-capture from this)
-              captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks, legendPosition, progressValue, animationStyle, mapInstanceRef.current);
+            // Render frame to canvas
+            captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks, legendPosition, progressValue, animationStyle, mapInstanceRef.current);
 
-              // Log progress periodically
-              if (updateCount % 30 === 0) {
-                console.log(`Export progress: ${progressValue.toFixed(1)}% (${elapsed.toFixed(1)}s / ${exportDuration}s)`);
-              }
+            // Save frame as ImageData
+            const ctx = compositeCanvas.getContext('2d');
+            const frameData = ctx.getImageData(0, 0, exportWidth, exportHeight);
+            renderedFrames.push(frameData);
 
-              // Wait for next update interval
-              const frameProcessEnd = Date.now();
-              const frameProcessTime = frameProcessEnd - frameProcessStart;
-              const nextUpdateWait = Math.max(0, updateInterval - frameProcessTime);
-
-              await new Promise(resolve => setTimeout(resolve, nextUpdateWait));
+            // Log progress
+            if (frame % 50 === 0) {
+              console.log(`Pre-rendered frame ${frame}/${totalFrames} (${progressValue.toFixed(1)}%)`);
             }
-          };
+          }
 
-          // Start canvas update loop
-          await updateCanvas();
+          if (renderCancelledRef.current) {
+            console.log('Export cancelled during pre-render phase');
+            return;
+          }
+
+          const preRenderTime = Date.now() - exportStartTime;
+          console.log(`Phase 1 complete: ${renderedFrames.length} frames rendered in ${(preRenderTime/1000).toFixed(1)}s`);
+          console.log(`Phase 2: Playing back frames at ${targetFPS} FPS while recording`);
+          console.log(`⏱️  Playback will take ${exportDuration}s in real-time`);
+
+          // PHASE 2: Play back frames at correct FPS
+          const playbackStartTime = Date.now();
+          const playbackInterval = frameDuration; // Exact interval for target FPS
+
+          for (let i = 0; i < renderedFrames.length; i++) {
+            if (renderCancelledRef.current) {
+              break;
+            }
+
+            const targetTime = playbackStartTime + (i * playbackInterval);
+
+            // Draw pre-rendered frame to canvas
+            const ctx = compositeCanvas.getContext('2d');
+            ctx.putImageData(renderedFrames[i], 0, 0);
+
+            // Update progress
+            const playbackProgress = (i / renderedFrames.length) * 100;
+            setRenderProgress(playbackProgress);
+
+            // Wait until exact target time
+            const now = Date.now();
+            const waitTime = targetTime - now;
+            if (waitTime > 0) {
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+
+            // Log every 30 frames
+            if (i % 30 === 0) {
+              const elapsed = (Date.now() - playbackStartTime) / 1000;
+              console.log(`Playback: frame ${i}/${renderedFrames.length} (${elapsed.toFixed(1)}s elapsed)`);
+            }
+          }
 
           // Stop recording - show summary
           const totalExportTime = Date.now() - exportStartTime;
+          const playbackTime = Date.now() - playbackStartTime;
           console.log(`\n=== Export Complete ===`);
-          console.log(`Canvas updates: ${updateCount}`);
-          console.log(`Expected frames captured: ${totalFrames} at ${targetFPS} FPS`);
-          console.log(`Expected video duration: ${exportDuration}s`);
-          console.log(`Export took: ${(totalExportTime/1000).toFixed(1)}s (real-time)`);
+          console.log(`Phase 1 (pre-render): ${(preRenderTime/1000).toFixed(1)}s`);
+          console.log(`Phase 2 (playback): ${(playbackTime/1000).toFixed(1)}s`);
+          console.log(`Total export time: ${(totalExportTime/1000).toFixed(1)}s`);
+          console.log(`Frames rendered: ${renderedFrames.length}`);
+          console.log(`Expected video: ${totalFrames} frames at ${targetFPS} FPS = ${exportDuration}s`);
           console.log(`\nℹ️  Video metadata will be inspected when encoding completes...`);
           console.log(`===================================\n`);
 
