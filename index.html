@@ -539,6 +539,12 @@
       margin-bottom: 20px;
     }
 
+    .rendering-content .btn {
+      margin-top: 20px;
+      min-width: 120px;
+      font-size: 15px;
+    }
+
     /* Hamburger Menu Button */
     .hamburger-btn {
       display: none;
@@ -779,6 +785,8 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 1.9.2 - CRITICAL FPS FIX: Use captureStream(0) + no frame delays for consistent MediaRecorder encoding. Frames captured sequentially ensure correct FPS without FFmpeg
+    // 1.9.1 - Enhanced cancel button visibility in export progress popup with better spacing and sizing
     // 1.8.1 - Fixed video duration: Use absolute frame timing from export start, set timeslice=frameDuration, improved logging with drift tracking
     // 1.8.0 - MAJOR: Added video duration control (5s-300s, default 60s). FPS now controls smoothness, duration controls animation length. Fixes low FPS issue!
     // 1.7.4 - Fixed logging bugs: moved log after variable definition, use local frameStats instead of window, improved summary formatting with percentages
@@ -822,7 +830,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "1.9.0";
+    const APP_VERSION = "1.9.2";
 
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
@@ -1858,9 +1866,10 @@
           const bitsPerPixelFrame = qualityPresets[exportQuality] || qualityPresets['high'];
           const targetBitrate = Math.round(pixelCount * targetFPS * bitsPerPixelFrame);
 
-          // Set target frame rate on stream AND use manual requestFrame()
-          // This tells the encoder the target FPS while we control exact frame timing
-          const stream = compositeCanvas.captureStream(targetFPS);
+          // Use captureStream(0) for manual-only frame capture
+          // This ensures frames arrive at MediaRecorder at consistent intervals
+          // The frameRate option tells MediaRecorder what FPS to encode
+          const stream = compositeCanvas.captureStream(0);
           compositeStreamRef.current = stream;
 
           let options = {
@@ -2132,11 +2141,14 @@
           renderCancelledRef.current = false;
 
           // Frame-by-frame rendering with manual frame requests
+          // KEY: Capture frames sequentially with NO delays between them
+          // MediaRecorder encodes frames at equal intervals based on the frameRate option
+          // This ensures correct FPS without needing FFmpeg post-processing
           const totalFrames = Math.round(exportDuration * targetFPS); // duration * FPS = total frames
           const videoTrack = stream.getVideoTracks()[0];
 
           console.log(`Starting video export: ${totalFrames} frames at ${targetFPS} FPS for ${exportDuration}s video`);
-          console.log(`Frame interval: ${frameDuration.toFixed(2)}ms, Timeslice: ${Math.floor(frameDuration)}ms`);
+          console.log(`Capturing frames sequentially (no delays) - MediaRecorder handles timing`);
           console.log(`Expected output video duration: ${exportDuration}s`);
 
           // Track zoom state to optimize tile loading
@@ -2145,8 +2157,6 @@
 
           // Initialize frame statistics
           const frameStats = { fast: 0, slow: 0, totalTime: 0, count: 0 };
-
-          // Use absolute timing from export start for precise frame intervals
           const exportStartTime = Date.now();
 
           for (let frame = 0; frame <= totalFrames; frame++) {
@@ -2154,8 +2164,6 @@
               break;
             }
 
-            // Calculate target time for this frame (absolute timing)
-            const targetFrameTime = exportStartTime + (frame * frameDuration);
             const frameProcessStart = Date.now();
 
             const progressValue = (frame / totalFrames) * 100;
@@ -2281,19 +2289,16 @@
             captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks, legendPosition, progressValue, animationStyle, mapInstanceRef.current);
 
             // Manually request frame from stream
-            // This ensures we capture the current canvas state immediately
+            // With captureStream(0), frames only capture when requested
+            // MediaRecorder will encode frames at equal time intervals (frameRate option)
             if (videoTrack && videoTrack.requestFrame) {
               videoTrack.requestFrame();
             }
 
-            // Precise frame timing using absolute time from export start
-            // This ensures consistent frame intervals for proper video FPS
+            // Track frame timing for logging (no delays between frames)
             const frameProcessEnd = Date.now();
             const frameProcessTime = frameProcessEnd - frameProcessStart;
-            const currentTime = Date.now();
-            const timeUntilNextFrame = targetFrameTime - currentTime;
 
-            // Track frame timing statistics
             frameStats.totalTime += frameProcessTime;
             frameStats.count++;
             if (frameProcessTime < frameDuration) {
@@ -2303,19 +2308,8 @@
             }
 
             if (frame % 50 === 0 || frame === totalFrames) {
-              // Log every 50 frames and at the end
               const avgTime = frameStats.totalTime / frameStats.count;
-              const drift = currentTime - targetFrameTime;
-              console.log(`Frame ${frame}/${totalFrames}: process=${frameProcessTime.toFixed(0)}ms, avg=${avgTime.toFixed(0)}ms, drift=${drift.toFixed(0)}ms, target=${frameDuration.toFixed(1)}ms`);
-            }
-
-            // Wait until the target time for this frame
-            // This maintains precise frame intervals regardless of processing time
-            if (timeUntilNextFrame > 0) {
-              await new Promise(resolve => setTimeout(resolve, timeUntilNextFrame));
-            } else if (timeUntilNextFrame < -100) {
-              // Warn if we're falling significantly behind
-              console.warn(`Frame ${frame} is ${Math.abs(timeUntilNextFrame).toFixed(0)}ms behind schedule`);
+              console.log(`Frame ${frame}/${totalFrames}: processed in ${frameProcessTime.toFixed(0)}ms, avg=${avgTime.toFixed(0)}ms`);
             }
           }
 
