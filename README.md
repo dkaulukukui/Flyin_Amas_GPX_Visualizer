@@ -3,10 +3,21 @@
 A beautiful, interactive web application for visualizing and animating GPS tracks from GPX files. Perfect for showcasing Strava activities, outdoor adventures, or any GPS-recorded journey.
 
 ![GPX Track Animator](https://img.shields.io/badge/Status-Active-success)
-![Version](https://img.shields.io/badge/Version-2.1.4-blue)
+![Version](https://img.shields.io/badge/Version-2.1.5-blue)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
-## What's New in v2.1
+> **⚠️ Disclaimer:** This code was generated with AI assistance. While thoroughly tested, users should review and verify the code before use in production environments.
+
+## What's New in v2.1.5
+
+📚 **New Help & Documentation** - Comprehensive in-app help guide!
+
+- ❓ **Help Modal**: Click the Help button for detailed usage instructions
+- 📱 **GPX Export Guides**: Step-by-step instructions for Strava, Garmin, Paddle Logger, and 10+ other fitness apps
+- ❔ **FAQ Section**: Common questions answered (What is GPX? Video formats? Privacy?)
+- 💡 **Tips & Tricks**: Best practices for quality, performance, and features
+
+## Previous Updates (v2.1.x)
 
 🎉 **Major Video Export Overhaul** - Videos now export at **exactly** the specified FPS and duration!
 
@@ -17,6 +28,7 @@ A beautiful, interactive web application for visualizing and animating GPS track
 - 📍 **Position Markers**: White-rimmed circles show current position
 - 🗺️ **Map Tiles Included**: Satellite imagery now appears in exported videos
 - ⚙️ **Customizable Settings**: Control duration (5-300s), FPS (15-60), quality, and resolution
+- 📱 **iOS Detection**: Graceful handling with screen recording instructions
 
 ## Features
 
@@ -182,6 +194,8 @@ MIT License - feel free to use and modify for your own projects.
 ## Credits
 
 Built with ❤️ for the GPS tracking community.
+
+**Development:** This project was developed with AI assistance using Claude Code. The codebase is AI-generated and has been tested for functionality, but users are encouraged to review the code before deployment.
 
 ## Support
 

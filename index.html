@@ -775,6 +775,239 @@
         padding: 10px 16px;
       }
     }
+
+    /* Help Modal Styles */
+    .help-btn {
+      background: #fc4c02;
+      border: none;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.2s;
+      margin-left: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .help-btn:hover {
+      background: #ff6b2c;
+      transform: translateY(-1px);
+    }
+
+    .help-modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .help-modal {
+      background: #2d2d2d;
+      border-radius: 12px;
+      max-width: 800px;
+      max-height: 90vh;
+      width: 100%;
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      animation: slideUp 0.3s ease;
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .help-modal-header {
+      background: #3a3a3a;
+      padding: 20px 30px;
+      border-bottom: 2px solid #fc4c02;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    .help-modal-title {
+      font-size: 24px;
+      color: #fc4c02;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .help-modal-close {
+      background: transparent;
+      border: none;
+      color: #999;
+      font-size: 28px;
+      cursor: pointer;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+
+    .help-modal-close:hover {
+      background: #555;
+      color: white;
+    }
+
+    .help-modal-content {
+      padding: 30px;
+      color: #e0e0e0;
+      line-height: 1.6;
+    }
+
+    .help-section {
+      margin-bottom: 30px;
+    }
+
+    .help-section h2 {
+      color: #fc4c02;
+      font-size: 20px;
+      margin-bottom: 12px;
+      margin-top: 0;
+      border-bottom: 1px solid #444;
+      padding-bottom: 8px;
+    }
+
+    .help-section h3 {
+      color: #ff6b2c;
+      font-size: 16px;
+      margin: 16px 0 8px 0;
+    }
+
+    .help-section p {
+      margin: 10px 0;
+      color: #ccc;
+    }
+
+    .help-section ul, .help-section ol {
+      margin: 10px 0;
+      padding-left: 24px;
+    }
+
+    .help-section li {
+      margin: 8px 0;
+      color: #ccc;
+    }
+
+    .help-section a {
+      color: #fc4c02;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .help-section a:hover {
+      color: #ff6b2c;
+      text-decoration: underline;
+    }
+
+    .help-section code {
+      background: #1a1a1a;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      color: #fc4c02;
+    }
+
+    .feature-list {
+      background: #3a3a3a;
+      padding: 15px 15px 15px 35px;
+      border-radius: 6px;
+      margin: 10px 0;
+    }
+
+    .faq-item {
+      background: #3a3a3a;
+      padding: 15px;
+      border-radius: 6px;
+      margin-bottom: 15px;
+    }
+
+    .faq-question {
+      color: #ff6b2c;
+      font-weight: 600;
+      margin-bottom: 8px;
+      font-size: 15px;
+    }
+
+    .faq-answer {
+      color: #ccc;
+      line-height: 1.6;
+    }
+
+    .app-badge {
+      display: inline-block;
+      background: #fc4c02;
+      color: white;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 13px;
+      margin: 4px 4px 4px 0;
+    }
+
+    @media (max-width: 768px) {
+      .help-modal {
+        max-height: 95vh;
+        border-radius: 8px;
+      }
+
+      .help-modal-header {
+        padding: 15px 20px;
+      }
+
+      .help-modal-title {
+        font-size: 20px;
+      }
+
+      .help-modal-content {
+        padding: 20px;
+      }
+
+      .help-btn {
+        padding: 6px 12px;
+        font-size: 13px;
+      }
+
+      .help-section h2 {
+        font-size: 18px;
+      }
+
+      .help-section h3 {
+        font-size: 15px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -785,6 +1018,7 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 2.1.5 - Add comprehensive help modal with FAQ, app usage instructions, and detailed GPX export guides for popular fitness apps (Strava, Garmin, Paddle Logger, etc.)
     // 2.1.4 - Add iOS detection: Block video export on iOS devices (MediaRecorder API not supported), provide screen recording instructions instead
     // 2.1.3 - Fix showAllTracks toggle: Now properly controls full track preview in browser playback, matching export behavior (track color @ 30% opacity)
     // 2.1.2 - Add position markers (white circles) and full track preview to exported videos. Enhanced drawTracksDirect to render complete visual elements.
@@ -837,7 +1071,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "2.1.4";
+    const APP_VERSION = "2.1.5";
 
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
@@ -867,6 +1101,7 @@
       const [titleColor, setTitleColor] = useState('#ffffff');
       const [legendPosition, setLegendPosition] = useState('bottom-left');
       const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+      const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
       
       const mapRef = useRef(null);
       const mapInstanceRef = useRef(null);
@@ -1331,6 +1566,15 @@
 
       const closeSidebar = () => {
         setIsSidebarOpen(false);
+      };
+
+      // Help modal toggle
+      const toggleHelpModal = () => {
+        setIsHelpModalOpen(!isHelpModalOpen);
+      };
+
+      const closeHelpModal = () => {
+        setIsHelpModalOpen(false);
       };
 
       // Handle progress bar scrubbing (click/drag to seek)
@@ -2516,7 +2760,12 @@
               <h1>🗺️ Flyin Amas GPX Track Animator</h1>
               <p>Upload your GPX files and create animated track videos</p>
             </div>
-            <div className="version">v{APP_VERSION}</div>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <div className="version">v{APP_VERSION}</div>
+              <button className="help-btn" onClick={toggleHelpModal}>
+                ❓ Help
+              </button>
+            </div>
           </div>
           
           <div className="main-container">
@@ -3013,6 +3262,229 @@
               <div id="map" ref={mapRef}></div>
             </div>
           </div>
+
+          {/* Help Modal */}
+          {isHelpModalOpen && (
+            <div className="help-modal-overlay" onClick={closeHelpModal}>
+              <div className="help-modal" onClick={(e) => e.stopPropagation()}>
+                <div className="help-modal-header">
+                  <h1 className="help-modal-title">Help & Guide</h1>
+                  <button className="help-modal-close" onClick={closeHelpModal}>×</button>
+                </div>
+                <div className="help-modal-content">
+
+                  {/* What is this app? */}
+                  <div className="help-section">
+                    <h2>What is Flyin Amas GPX Track Animator?</h2>
+                    <p>
+                      This web application allows you to visualize and animate GPS tracks from GPX files.
+                      Upload your GPS data from activities like running, cycling, paddling, or flying, and
+                      create beautiful animated videos showing your route on a satellite map.
+                    </p>
+                    <div className="feature-list">
+                      <ul>
+                        <li>Animate single or multiple GPS tracks simultaneously</li>
+                        <li>Customize track colors, labels, and appearance</li>
+                        <li>Export high-quality videos (up to 4K resolution)</li>
+                        <li>Control animation speed, zoom, and playback style</li>
+                        <li>Add custom video titles and legends</li>
+                        <li>Works entirely in your browser - no server upload required</li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  {/* How to use */}
+                  <div className="help-section">
+                    <h2>How to Use</h2>
+                    <ol>
+                      <li><strong>Upload GPX files:</strong> Drag and drop your GPX files into the upload zone, or click to browse</li>
+                      <li><strong>Customize tracks:</strong> Edit track labels, change colors, and adjust settings in the sidebar</li>
+                      <li><strong>Preview animation:</strong> Click Play to see how your tracks will animate on the map</li>
+                      <li><strong>Adjust settings:</strong> Control animation speed, zoom level, and display options</li>
+                      <li><strong>Export video:</strong> Configure video settings (resolution, duration, FPS) and click "Export Video"</li>
+                      <li><strong>Download:</strong> Wait for the export to complete, then download your animated video</li>
+                    </ol>
+                    <p>
+                      <strong>Note for iOS users:</strong> Video export is not supported on iPhone/iPad due to browser limitations.
+                      Please use a desktop browser or use iOS Screen Recording while playing the animation.
+                    </p>
+                  </div>
+
+                  {/* FAQ */}
+                  <div className="help-section">
+                    <h2>Frequently Asked Questions</h2>
+
+                    <div className="faq-item">
+                      <div className="faq-question">What is a GPX file?</div>
+                      <div className="faq-answer">
+                        GPX (GPS Exchange Format) is a standard XML format for storing GPS data including waypoints,
+                        routes, and tracks. It's universally supported by GPS devices and fitness tracking apps.
+                        GPX files contain latitude/longitude coordinates and optionally timestamps, elevation,
+                        and other metadata about your recorded activities.
+                      </div>
+                    </div>
+
+                    <div className="faq-item">
+                      <div className="faq-question">How do I get GPX files from my fitness tracking app?</div>
+                      <div className="faq-answer">
+                        Most fitness apps allow you to export your activities as GPX files. See the detailed
+                        instructions below for popular apps like Strava, Garmin, and Paddle Logger.
+                      </div>
+                    </div>
+
+                    <div className="faq-item">
+                      <div className="faq-question">Can I animate multiple tracks at once?</div>
+                      <div className="faq-answer">
+                        Yes! Upload multiple GPX files and they'll all appear on the map. You can choose between
+                        "Simultaneous" mode (all tracks animate based on their actual GPS timestamps) or "Sequential"
+                        mode (tracks play one after another in upload order).
+                      </div>
+                    </div>
+
+                    <div className="faq-item">
+                      <div className="faq-question">What video formats are supported?</div>
+                      <div className="faq-answer">
+                        The app exports videos in WebM or MP4 format depending on your browser. Chrome and Firefox
+                        support WebM VP9 (best quality), while Safari may use WebM VP8 or MP4. All modern browsers
+                        can play the exported videos.
+                      </div>
+                    </div>
+
+                    <div className="faq-item">
+                      <div className="faq-question">Why is video export slow?</div>
+                      <div className="faq-answer">
+                        Video export uses a two-phase process: first pre-rendering all frames (which can take several
+                        minutes for high-resolution videos), then playing them back at the correct frame rate. Higher
+                        resolutions (like 4K), longer durations, and enabled "Zoom to Track" significantly increase
+                        export time. For faster exports, try lower resolutions or shorter durations.
+                      </div>
+                    </div>
+
+                    <div className="faq-item">
+                      <div className="faq-question">Is my GPS data uploaded to a server?</div>
+                      <div className="faq-answer">
+                        No! All processing happens entirely in your browser. Your GPX files are never uploaded to any
+                        server - everything stays private on your device.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* How to download GPX files */}
+                  <div className="help-section">
+                    <h2>How to Download GPX Files from Popular Apps</h2>
+
+                    <h3><span className="app-badge">STRAVA</span></h3>
+                    <ol>
+                      <li>Log in to <a href="https://www.strava.com" target="_blank" rel="noopener noreferrer">Strava.com</a> on a desktop browser</li>
+                      <li>Navigate to your activity</li>
+                      <li>Click the three-dot menu (⋯) in the top right</li>
+                      <li>Select "Export GPX"</li>
+                      <li>The GPX file will download to your computer</li>
+                    </ol>
+                    <p><strong>Bulk export:</strong> Go to Settings → My Account → Download or Delete Your Account →
+                    Request Your Archive to download all activities at once.</p>
+
+                    <h3><span className="app-badge">GARMIN CONNECT</span></h3>
+                    <ol>
+                      <li>Log in to <a href="https://connect.garmin.com" target="_blank" rel="noopener noreferrer">Garmin Connect</a></li>
+                      <li>Open your activity</li>
+                      <li>Click the gear icon (⚙️) in the top right</li>
+                      <li>Select "Export to GPX"</li>
+                      <li>Save the file to your computer</li>
+                    </ol>
+                    <p><strong>Note:</strong> You can also export from the Garmin Connect mobile app:
+                    Open activity → Share icon → Export to GPX.</p>
+
+                    <h3><span className="app-badge">PADDLE LOGGER</span></h3>
+                    <ol>
+                      <li>Open the Paddle Logger app</li>
+                      <li>View your paddle session</li>
+                      <li>Tap the Share/Export button</li>
+                      <li>Select "Export as GPX"</li>
+                      <li>Choose where to save or share the file</li>
+                    </ol>
+                    <p><strong>Tip:</strong> You can email the GPX file to yourself or save it to cloud storage
+                    for easy access on your computer.</p>
+
+                    <h3><span className="app-badge">APPLE HEALTH / WORKOUTS</span></h3>
+                    <ol>
+                      <li>Download a third-party app like "HealthFit" or "RunGap" from the App Store</li>
+                      <li>Grant the app permission to read your Health data</li>
+                      <li>Select the workout you want to export</li>
+                      <li>Choose "Export as GPX"</li>
+                      <li>Share or save the GPX file</li>
+                    </ol>
+                    <p><strong>Note:</strong> Apple Health doesn't natively export GPX files, so you'll need
+                    a third-party app.</p>
+
+                    <h3><span className="app-badge">KOMOOT</span></h3>
+                    <ol>
+                      <li>Go to <a href="https://www.komoot.com" target="_blank" rel="noopener noreferrer">Komoot.com</a></li>
+                      <li>Open your completed tour</li>
+                      <li>Click "Export" or the download icon</li>
+                      <li>Select "GPX Track"</li>
+                      <li>Download the file</li>
+                    </ol>
+
+                    <h3><span className="app-badge">RELIVE</span></h3>
+                    <ol>
+                      <li>Open your activity in the Relive app or website</li>
+                      <li>Tap/click the Share button</li>
+                      <li>Select "Export GPX"</li>
+                      <li>Save or share the file</li>
+                    </ol>
+
+                    <h3><span className="app-badge">MAPMYRUN / MAPMYRIDE</span></h3>
+                    <ol>
+                      <li>Log in to <a href="https://www.mapmyrun.com" target="_blank" rel="noopener noreferrer">MapMyRun.com</a> or MapMyRide.com</li>
+                      <li>Go to your workout details</li>
+                      <li>Click the gear icon or "Export" button</li>
+                      <li>Choose "Export as GPX"</li>
+                      <li>Download the file</li>
+                    </ol>
+
+                    <h3><span className="app-badge">RIDE WITH GPS</span></h3>
+                    <ol>
+                      <li>Log in to <a href="https://ridewithgps.com" target="_blank" rel="noopener noreferrer">RideWithGPS.com</a></li>
+                      <li>Open your ride/trip</li>
+                      <li>Click "Export" in the menu</li>
+                      <li>Select "GPX Track"</li>
+                      <li>Download the file</li>
+                    </ol>
+
+                    <h3><span className="app-badge">WIKILOC</span></h3>
+                    <ol>
+                      <li>Go to <a href="https://www.wikiloc.com" target="_blank" rel="noopener noreferrer">Wikiloc.com</a></li>
+                      <li>Open your trail</li>
+                      <li>Click "Download" button</li>
+                      <li>Select "GPX" format</li>
+                      <li>Save the file</li>
+                    </ol>
+
+                    <p style={{ marginTop: '20px', fontStyle: 'italic', color: '#999' }}>
+                      <strong>Can't find your app?</strong> Most fitness and GPS tracking apps support GPX export.
+                      Look for "Export", "Share", or "Download" options in your activity details, or check the
+                      app's help documentation.
+                    </p>
+                  </div>
+
+                  {/* Tips & Tricks */}
+                  <div className="help-section">
+                    <h2>Tips & Tricks</h2>
+                    <ul>
+                      <li><strong>Best video quality:</strong> Use "High" or "Ultra" quality preset and 1080p or 4K resolution</li>
+                      <li><strong>Smooth animation:</strong> Set FPS to 30 or 60 for fluid motion</li>
+                      <li><strong>Quick exports:</strong> Disable "Zoom to Track" and use lower resolutions (720p)</li>
+                      <li><strong>Compare routes:</strong> Upload multiple GPX files and use "Simultaneous" mode to see how they align</li>
+                      <li><strong>Custom labels:</strong> Give your tracks meaningful names like "Morning Run" or "Weekend Ride"</li>
+                      <li><strong>Perfect timing:</strong> Adjust video duration (5-300 seconds) to match your desired pacing</li>
+                    </ul>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+          )}
         </>
       );
     }
