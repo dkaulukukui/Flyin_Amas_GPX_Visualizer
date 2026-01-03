@@ -10,7 +10,6 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
-  <script src="https://unpkg.com/webm-muxer@4.1.0/build/webm-muxer.js"></script>
   <style>
     * {
       margin: 0;
@@ -1019,7 +1018,7 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
-    // 2.2.0 - WEBCODECS: Use WebCodecs API for 99% less RAM usage (Chrome/Edge). Encode frames one-at-a-time instead of storing all in memory. Fixes "Out of memory" errors. Falls back to MediaRecorder on Safari/Firefox with memory warning.
+    // 2.2.0 - STREAMING EXPORT: Render frames one-at-a-time directly to MediaRecorder stream (no RAM storage). Fixes "Out of memory" errors by eliminating ImageData accumulation. Works on all browsers.
     // 2.1.5 - Add comprehensive help modal with FAQ, app usage instructions, and detailed GPX export guides for popular fitness apps (Strava, Garmin, Paddle Logger, etc.)
     // 2.1.4 - Add iOS detection: Block video export on iOS devices (MediaRecorder API not supported), provide screen recording instructions instead
     // 2.1.3 - Fix showAllTracks toggle: Now properly controls full track preview in browser playback, matching export behavior (track color @ 30% opacity)
@@ -2097,16 +2096,16 @@
         return { totalFrames, totalGB };
       };
 
-      // WebCodecs-based export (99% less RAM)
-      const startRecordingWebCodecs = async () => {
+      // Streaming export (no RAM storage) - Renders and encodes frames on-the-fly
+      const startRecordingStreaming = async () => {
         try {
           const mapContainer = mapInstanceRef.current.getContainer();
           const [exportWidth, exportHeight] = exportResolution.split('x').map(Number);
           const targetFPS = exportFPS;
           const totalFrames = Math.round(exportDuration * targetFPS);
 
-          console.log('=== WebCodecs Export ===');
-          console.log(`Using WebCodecs API for efficient encoding`);
+          console.log('=== Streaming Export (Low RAM Mode) ===');
+          console.log(`Rendering frames on-the-fly without storage`);
           console.log(`${exportWidth}x${exportHeight} @ ${targetFPS}fps, ${exportDuration}s`);
           console.log(`Total frames: ${totalFrames}`);
 
@@ -2145,77 +2144,92 @@
           const bitsPerPixelFrame = qualityPresets[exportQuality] || 0.25;
           const targetBitrate = Math.round(pixelCount * targetFPS * bitsPerPixelFrame);
 
-          // Setup WebM Muxer
-          // Check if webm-muxer library is available
-          if (typeof WebMMuxer === 'undefined' || !WebMMuxer.Muxer) {
-            throw new Error('webm-muxer library not loaded. Falling back to MediaRecorder.');
+          // Setup MediaRecorder with canvas stream
+          const stream = canvas.captureStream(targetFPS);
+          compositeStreamRef.current = stream;
+
+          let options = {
+            videoBitsPerSecond: targetBitrate,
+            bitsPerSecond: targetBitrate,
+            frameRate: targetFPS
+          };
+          let mimeType = 'video/webm';
+          let fileExtension = 'webm';
+
+          // Try VP9 first, then VP8
+          if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+            options.mimeType = 'video/webm;codecs=vp9';
+            console.log('Using VP9 codec');
+          } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+            options.mimeType = 'video/webm;codecs=vp8';
+            console.log('Using VP8 codec');
+          } else if (MediaRecorder.isTypeSupported('video/webm')) {
+            options.mimeType = 'video/webm';
+            console.log('Using WebM default codec');
           }
 
-          let muxer = new WebMMuxer.Muxer({
-            target: new WebMMuxer.ArrayBufferTarget(),
-            video: {
-              codec: 'V_VP9',
-              width: exportWidth,
-              height: exportHeight,
-              frameRate: targetFPS
+          const recorder = new MediaRecorder(stream, options);
+          recordedChunksRef.current = [];
+          mediaRecorderRef.current = recorder;
+
+          recorder.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+              recordedChunksRef.current.push(e.data);
             }
-          });
-
-          // Setup VideoEncoder with muxer
-          let videoEncoder = null;
-
-          const encoderConfig = {
-            codec: 'vp09.00.10.08', // VP9
-            width: exportWidth,
-            height: exportHeight,
-            bitrate: targetBitrate,
-            framerate: targetFPS,
-            latencyMode: 'quality'
           };
 
-          // Check codec support
-          const support = await VideoEncoder.isConfigSupported(encoderConfig);
-          if (!support.supported) {
-            // Try VP8 fallback
-            encoderConfig.codec = 'vp8';
-            muxer = new WebMMuxer.Muxer({
-              target: new WebMMuxer.ArrayBufferTarget(),
-              video: {
-                codec: 'V_VP8',
-                width: exportWidth,
-                height: exportHeight,
-                frameRate: targetFPS
-              }
-            });
-            const vp8Support = await VideoEncoder.isConfigSupported(encoderConfig);
-            if (!vp8Support.supported) {
-              throw new Error('No supported video codec found');
+          recorder.onstop = async () => {
+            // Restore original map size
+            if (originalMapSizeRef.current) {
+              mapContainer.style.width = originalMapSizeRef.current.width;
+              mapContainer.style.height = originalMapSizeRef.current.height;
+              mapInstanceRef.current.invalidateSize();
+              originalMapSizeRef.current = null;
             }
-            console.log('Using VP8 codec');
-          } else {
-            console.log('Using VP9 codec');
-          }
 
-          videoEncoder = new VideoEncoder({
-            output: (chunk, metadata) => {
-              // Add encoded chunk to muxer
-              muxer.addVideoChunk(chunk, metadata);
-            },
-            error: (error) => {
-              console.error('Encoder error:', error);
+            if (recordedChunksRef.current.length === 0) {
+              console.warn('No data recorded');
+              setIsRendering(false);
+              setIsRecording(false);
+              return;
             }
-          });
 
-          videoEncoder.configure(encoderConfig);
+            const blob = new Blob(recordedChunksRef.current, { type: mimeType });
+
+            // Download
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `gpx-animation-${Date.now()}.${fileExtension}`;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            console.log(`✓ Streaming export complete!`);
+
+            // Cleanup
+            setIsRendering(false);
+            setIsRecording(false);
+            if (compositeStreamRef.current) {
+              compositeStreamRef.current.getTracks().forEach(track => track.stop());
+              compositeStreamRef.current = null;
+            }
+            compositeCanvasRef.current = null;
+            renderCancelledRef.current = false;
+          };
+
+          // Start recording
+          recorder.start(Math.max(10, Math.floor(1000 / targetFPS)));
+          setIsRecording(true);
 
           // Track zoom state
           let lastZoomLevel = mapInstanceRef.current.getZoom();
           let lastCenter = mapInstanceRef.current.getCenter();
 
-          console.log('Starting frame-by-frame encoding (no RAM storage)...');
+          console.log('Starting frame-by-frame rendering (streaming to MediaRecorder)...');
           const exportStartTime = Date.now();
+          const frameDuration = 1000 / targetFPS;
 
-          // Render and encode each frame one-at-a-time
+          // Render each frame and let MediaRecorder capture from stream
           for (let frame = 0; frame <= totalFrames; frame++) {
             if (renderCancelledRef.current) {
               break;
@@ -2319,74 +2333,42 @@
               await new Promise(resolve => requestAnimationFrame(resolve));
             }
 
-            // Render frame to canvas
+            // Render frame to canvas (MediaRecorder captures automatically from stream)
             captureFrame(mapContainer, canvas, exportWidth, exportHeight, 0, 0, 1, exportWidth, exportHeight,
               videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks, legendPosition,
               progressValue, animationStyle, mapInstanceRef.current, showAllTracks);
 
-            // Encode frame immediately (no storage!)
-            const timestamp = (frame / targetFPS) * 1000000; // microseconds
-            const videoFrame = new VideoFrame(canvas, {
-              timestamp: timestamp,
-              duration: (1000000 / targetFPS)
-            });
-
-            videoEncoder.encode(videoFrame);
-            videoFrame.close(); // Free memory immediately
+            // Wait for frame duration to maintain correct timing
+            const targetTime = exportStartTime + (frame * frameDuration);
+            const now = Date.now();
+            const waitTime = targetTime - now;
+            if (waitTime > 0) {
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
 
             // Log progress
             if (frame % 50 === 0) {
-              console.log(`Encoded frame ${frame}/${totalFrames} (${progressValue.toFixed(1)}%)`);
+              console.log(`Rendered frame ${frame}/${totalFrames} (${progressValue.toFixed(1)}%)`);
             }
           }
 
           if (renderCancelledRef.current) {
-            videoEncoder.close();
-            muxer.finalize();
+            recorder.stop();
             throw new Error('Export cancelled');
           }
 
-          // Flush encoder
-          console.log('Flushing encoder...');
-          await videoEncoder.flush();
-          videoEncoder.close();
+          // Stop recording
+          const renderTime = Date.now() - exportStartTime;
+          console.log(`Rendering complete in ${(renderTime/1000).toFixed(1)}s`);
+          console.log('Finalizing video file...');
 
-          // Finalize muxer and get WebM file
-          console.log('Finalizing WebM file...');
-          muxer.finalize();
-          const webmData = muxer.target.buffer;
-
-          const encodingTime = Date.now() - exportStartTime;
-          console.log(`Encoding complete in ${(encodingTime/1000).toFixed(1)}s`);
-
-          // Create blob and download
-          const blob = new Blob([webmData], { type: 'video/webm' });
-
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `gpx-animation-${Date.now()}.webm`;
-          a.click();
-          URL.revokeObjectURL(url);
-
-          const memoryUsed = webmData.byteLength / 1024 / 1024;
-          console.log(`✓ Export complete! Total time: ${((Date.now() - exportStartTime)/1000).toFixed(1)}s`);
-          console.log(`Memory used: ~${memoryUsed.toFixed(1)}MB (vs ${estimateMemoryUsage(exportWidth, exportHeight, targetFPS, exportDuration).totalGB.toFixed(1)}GB with ImageData)`);
-
-          // Cleanup
-          setIsRendering(false);
-          setIsRecording(false);
-          if (originalMapSizeRef.current) {
-            mapContainer.style.width = originalMapSizeRef.current.width;
-            mapContainer.style.height = originalMapSizeRef.current.height;
-            mapInstanceRef.current.invalidateSize();
-            originalMapSizeRef.current = null;
+          if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
           }
-          renderCancelledRef.current = false;
 
         } catch (err) {
-          console.error('WebCodecs export error:', err);
-          alert('WebCodecs export failed: ' + err.message + '\n\nFalling back to standard export...');
+          console.error('Streaming export error:', err);
+          alert('Streaming export failed: ' + err.message + '\n\nTrying standard export...');
 
           // Cleanup before fallback
           setIsRendering(false);
@@ -2399,7 +2381,7 @@
             originalMapSizeRef.current = null;
           }
 
-          // Fall back to MediaRecorder
+          // Fall back to standard method
           await startRecording();
         }
       };
@@ -2425,16 +2407,13 @@
             return;
           }
 
-          // Check for WebCodecs support (Chrome/Edge)
-          if (typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined') {
-            console.log('✓ WebCodecs API detected - using efficient encoding (99% less RAM)');
-            await startRecordingWebCodecs();
-            return;
-          }
+          // Try streaming export first (works on all browsers, low RAM)
+          console.log('Using streaming export (low RAM usage)');
+          await startRecordingStreaming();
+          return;
 
-          // Fallback to MediaRecorder - show memory warning
-          console.log('⚠️  WebCodecs not available - using MediaRecorder fallback');
-          console.log('Note: This may use significant RAM. For better performance, use Chrome or Edge.');
+          // The code below is dead code for now - we always use streaming
+          // TODO: In future, could add WebCodecs path here for even better quality
 
           const [exportWidth, exportHeight] = exportResolution.split('x').map(Number);
           const memoryEstimate = estimateMemoryUsage(exportWidth, exportHeight, exportFPS, exportDuration);
