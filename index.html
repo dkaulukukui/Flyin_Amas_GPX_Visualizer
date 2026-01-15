@@ -1018,6 +1018,7 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 2.2.1 - Add configurable initial map center (default: Oahu), auto-populate track labels from filename prefix before underscore (e.g., "Bob_track_1.gpx" → "Bob")
     // 2.2.0 - Add centered track feature: select specific track to follow during zoom animation, fixed zoom slider to directly control zoom level (no auto-fit), relative zoom level indicator (0, ±1, ±2, ±3), max video duration set to 60s, fixed centered track not being followed properly, fixed zoom not applying in exported videos (increased tile wait times), fixed type mismatch causing centered track selection to fail
     // 2.1.5 - Add comprehensive help modal with FAQ, app usage instructions, and detailed GPX export guides for popular fitness apps (Strava, Garmin, Paddle Logger, etc.)
     // 2.1.4 - Add iOS detection: Block video export on iOS devices (MediaRecorder API not supported), provide screen recording instructions instead
@@ -1072,7 +1073,12 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "2.2.0";
+    const APP_VERSION = "2.2.1";
+
+    // CONFIGURABLE: Initial map center when no tracks are loaded
+    // Default: Oahu, Hawaii [latitude, longitude]
+    const INITIAL_MAP_CENTER = [21.284, -157.718];
+    const INITIAL_MAP_ZOOM = 13;
 
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
@@ -1132,7 +1138,7 @@
       useEffect(() => {
         // Initialize map
         if (!mapInstanceRef.current) {
-          const map = L.map('map', { preferCanvas: true }).setView([37.7749, -122.4194], 12);
+          const map = L.map('map', { preferCanvas: true }).setView(INITIAL_MAP_CENTER, INITIAL_MAP_ZOOM);
 
           // Use CORS-enabled satellite tiles from multiple sources layered
           // Base layer: OpenStreetMap (CORS enabled, always works)
@@ -1211,8 +1217,9 @@
           points.push({ lat, lon, time });
         });
 
-        // Use track number for label
-        const defaultLabel = `Track ${trackNumber}`;
+        // Extract label from filename: use part before first underscore, or full name (minus .gpx) if no underscore
+        const baseName = filename.replace(/\.gpx$/i, '');
+        const defaultLabel = baseName.includes('_') ? baseName.split('_')[0] : baseName;
         let startTime = null;
         let endTime = null;
         let duration = null;
