@@ -1018,6 +1018,7 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 2.3.0 - Fix jittery video export using captureStream(0) with manual requestFrame() for precise frame timing. Video duration now automatically computed from playback speed (60s at 1x, 30s at 2x, etc.)
     // 2.2.1 - Add configurable initial map center (default: Oahu), auto-populate track labels from filename prefix before underscore (e.g., "Bob_track_1.gpx" → "Bob")
     // 2.2.0 - Add centered track feature: select specific track to follow during zoom animation, fixed zoom slider to directly control zoom level (no auto-fit), relative zoom level indicator (0, ±1, ±2, ±3), max video duration set to 60s, fixed centered track not being followed properly, fixed zoom not applying in exported videos (increased tile wait times), fixed type mismatch causing centered track selection to fail
     // 2.1.5 - Add comprehensive help modal with FAQ, app usage instructions, and detailed GPX export guides for popular fitness apps (Strava, Garmin, Paddle Logger, etc.)
@@ -1073,7 +1074,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "2.2.1";
+    const APP_VERSION = "2.3.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -1132,8 +1133,17 @@
         }
       }, [exportAspectRatio]);
 
-      // Hard limit video duration to 60 seconds max
+      // Video duration limits
+      const minVideoDuration = 10;
       const maxVideoDuration = 60;
+
+      // Compute video duration from playback speed
+      // Faster speed = shorter video (base 60s at 1x speed)
+      useEffect(() => {
+        const computedDuration = Math.round(60 / speed);
+        const clampedDuration = Math.min(maxVideoDuration, Math.max(minVideoDuration, computedDuration));
+        setExportDuration(clampedDuration);
+      }, [speed]);
 
       useEffect(() => {
         // Initialize map
@@ -2185,10 +2195,11 @@
           const bitsPerPixelFrame = qualityPresets[exportQuality] || qualityPresets['high'];
           const targetBitrate = Math.round(pixelCount * targetFPS * bitsPerPixelFrame);
 
-          // Use captureStream(targetFPS) for automatic frame capture at specified rate
-          // This ensures MediaRecorder receives frames at the correct FPS
-          // The browser handles timing automatically
-          const stream = compositeCanvas.captureStream(targetFPS);
+          // Use captureStream(0) for manual frame capture control
+          // This gives us precise control over when frames are captured
+          // We'll manually call requestFrame() after each frame is drawn
+          const stream = compositeCanvas.captureStream(0);
+          const videoTrack = stream.getVideoTracks()[0];
           compositeStreamRef.current = stream;
 
           let options = {
@@ -2648,11 +2659,17 @@
             const ctx = compositeCanvas.getContext('2d');
             ctx.putImageData(renderedFrames[i], 0, 0);
 
+            // Manually request frame capture - this ensures the frame is captured
+            // exactly when we want it, eliminating timing jitter
+            if (videoTrack.requestFrame) {
+              videoTrack.requestFrame();
+            }
+
             // Update progress
             const playbackProgress = (i / renderedFrames.length) * 100;
             setRenderProgress(playbackProgress);
 
-            // Wait until exact target time
+            // Wait until exact target time for consistent FPS
             const now = Date.now();
             const waitTime = targetTime - now;
             if (waitTime > 0) {
@@ -3060,26 +3077,18 @@
                           <option value="60">60 FPS (Smooth)</option>
                         </select>
                       </div>
-                      <div style={{ marginBottom: '12px' }}>
-                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>
-                          Video Duration: {exportDuration}s ({(exportDuration * exportFPS).toLocaleString()} frames)
+                      <div style={{ marginBottom: '12px', padding: '10px', backgroundColor: 'rgba(252, 76, 2, 0.1)', borderRadius: '6px', border: '1px solid rgba(252, 76, 2, 0.3)' }}>
+                        <label style={{ fontSize: '12px', color: '#ccc', display: 'block', marginBottom: '4px' }}>
+                          Video Duration (based on {speed}x speed)
                         </label>
-                        <input
-                          type="range"
-                          min="5"
-                          max={maxVideoDuration}
-                          step="5"
-                          value={exportDuration}
-                          onChange={(e) => setExportDuration(parseInt(e.target.value))}
-                          disabled={isRecording}
-                          className="slider"
-                          style={{ width: '100%' }}
-                        />
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#666', marginTop: '4px' }}>
-                          <span>5s</span>
-                          <span>20s</span>
-                          <span>40s</span>
-                          <span>60s (max)</span>
+                        <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#fc4c02' }}>
+                          {exportDuration}s
+                          <span style={{ fontSize: '12px', fontWeight: 'normal', color: '#999', marginLeft: '8px' }}>
+                            ({(exportDuration * exportFPS).toLocaleString()} frames)
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#666', marginTop: '4px' }}>
+                          Adjust playback speed to change video duration
                         </div>
                       </div>
 
