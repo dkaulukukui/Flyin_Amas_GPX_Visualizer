@@ -9,7 +9,6 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
   <style>
     * {
       margin: 0;
@@ -502,18 +501,7 @@
     .rendering-message {
       font-size: 14px;
       color: #999;
-      margin-bottom: 20px;
-    }
-
-    .export-format-indicator {
-      font-size: 13px;
-      color: #fc4c02;
-      background: rgba(252, 76, 2, 0.1);
-      padding: 8px 16px;
-      border-radius: 6px;
-      margin-bottom: 20px;
-      font-weight: 500;
-      border: 1px solid rgba(252, 76, 2, 0.3);
+      margin-bottom: 30px;
     }
 
     .progress-bar-container {
@@ -537,12 +525,6 @@
       color: #fc4c02;
       font-weight: 600;
       margin-bottom: 20px;
-    }
-
-    .rendering-content .btn {
-      margin-top: 20px;
-      min-width: 120px;
-      font-size: 15px;
     }
 
     /* Hamburger Menu Button */
@@ -775,239 +757,6 @@
         padding: 10px 16px;
       }
     }
-
-    /* Help Modal Styles */
-    .help-btn {
-      background: #fc4c02;
-      border: none;
-      color: white;
-      padding: 8px 16px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 600;
-      transition: all 0.2s;
-      margin-left: 10px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .help-btn:hover {
-      background: #ff6b2c;
-      transform: translateY(-1px);
-    }
-
-    .help-modal-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.8);
-      z-index: 10000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-      animation: fadeIn 0.2s ease;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-
-    .help-modal {
-      background: #2d2d2d;
-      border-radius: 12px;
-      max-width: 800px;
-      max-height: 90vh;
-      width: 100%;
-      overflow-y: auto;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-      animation: slideUp 0.3s ease;
-    }
-
-    @keyframes slideUp {
-      from {
-        opacity: 0;
-        transform: translateY(20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    .help-modal-header {
-      background: #3a3a3a;
-      padding: 20px 30px;
-      border-bottom: 2px solid #fc4c02;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      position: sticky;
-      top: 0;
-      z-index: 1;
-    }
-
-    .help-modal-title {
-      font-size: 24px;
-      color: #fc4c02;
-      font-weight: 600;
-      margin: 0;
-    }
-
-    .help-modal-close {
-      background: transparent;
-      border: none;
-      color: #999;
-      font-size: 28px;
-      cursor: pointer;
-      padding: 0;
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 4px;
-      transition: all 0.2s;
-    }
-
-    .help-modal-close:hover {
-      background: #555;
-      color: white;
-    }
-
-    .help-modal-content {
-      padding: 30px;
-      color: #e0e0e0;
-      line-height: 1.6;
-    }
-
-    .help-section {
-      margin-bottom: 30px;
-    }
-
-    .help-section h2 {
-      color: #fc4c02;
-      font-size: 20px;
-      margin-bottom: 12px;
-      margin-top: 0;
-      border-bottom: 1px solid #444;
-      padding-bottom: 8px;
-    }
-
-    .help-section h3 {
-      color: #ff6b2c;
-      font-size: 16px;
-      margin: 16px 0 8px 0;
-    }
-
-    .help-section p {
-      margin: 10px 0;
-      color: #ccc;
-    }
-
-    .help-section ul, .help-section ol {
-      margin: 10px 0;
-      padding-left: 24px;
-    }
-
-    .help-section li {
-      margin: 8px 0;
-      color: #ccc;
-    }
-
-    .help-section a {
-      color: #fc4c02;
-      text-decoration: none;
-      transition: color 0.2s;
-    }
-
-    .help-section a:hover {
-      color: #ff6b2c;
-      text-decoration: underline;
-    }
-
-    .help-section code {
-      background: #1a1a1a;
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-family: 'Courier New', monospace;
-      font-size: 13px;
-      color: #fc4c02;
-    }
-
-    .feature-list {
-      background: #3a3a3a;
-      padding: 15px 15px 15px 35px;
-      border-radius: 6px;
-      margin: 10px 0;
-    }
-
-    .faq-item {
-      background: #3a3a3a;
-      padding: 15px;
-      border-radius: 6px;
-      margin-bottom: 15px;
-    }
-
-    .faq-question {
-      color: #ff6b2c;
-      font-weight: 600;
-      margin-bottom: 8px;
-      font-size: 15px;
-    }
-
-    .faq-answer {
-      color: #ccc;
-      line-height: 1.6;
-    }
-
-    .app-badge {
-      display: inline-block;
-      background: #fc4c02;
-      color: white;
-      padding: 4px 10px;
-      border-radius: 4px;
-      font-weight: 600;
-      font-size: 13px;
-      margin: 4px 4px 4px 0;
-    }
-
-    @media (max-width: 768px) {
-      .help-modal {
-        max-height: 95vh;
-        border-radius: 8px;
-      }
-
-      .help-modal-header {
-        padding: 15px 20px;
-      }
-
-      .help-modal-title {
-        font-size: 20px;
-      }
-
-      .help-modal-content {
-        padding: 20px;
-      }
-
-      .help-btn {
-        padding: 6px 12px;
-        font-size: 13px;
-      }
-
-      .help-section h2 {
-        font-size: 18px;
-      }
-
-      .help-section h3 {
-        font-size: 15px;
-      }
-    }
   </style>
 </head>
 <body>
@@ -1018,53 +767,9 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
-    // 2.3.0 - Fix jittery video export using captureStream(0) with manual requestFrame() for precise frame timing. Video duration now automatically computed from playback speed (60s at 1x, 30s at 2x, etc.)
-    // 2.2.1 - Add configurable initial map center (default: Oahu), auto-populate track labels from filename prefix before underscore (e.g., "Bob_track_1.gpx" → "Bob")
-    // 2.2.0 - Add centered track feature: select specific track to follow during zoom animation, fixed zoom slider to directly control zoom level (no auto-fit), relative zoom level indicator (0, ±1, ±2, ±3), max video duration set to 60s, fixed centered track not being followed properly, fixed zoom not applying in exported videos (increased tile wait times), fixed type mismatch causing centered track selection to fail
-    // 2.1.5 - Add comprehensive help modal with FAQ, app usage instructions, and detailed GPX export guides for popular fitness apps (Strava, Garmin, Paddle Logger, etc.)
-    // 2.1.4 - Add iOS detection: Block video export on iOS devices (MediaRecorder API not supported), provide screen recording instructions instead
-    // 2.1.3 - Fix showAllTracks toggle: Now properly controls full track preview in browser playback, matching export behavior (track color @ 30% opacity)
-    // 2.1.2 - Add position markers (white circles) and full track preview to exported videos. Enhanced drawTracksDirect to render complete visual elements.
-    // 2.1.1 - CRITICAL FIX: Start MediaRecorder only during Phase 2 playback (not Phase 1 pre-render). Prevents recording the pre-render process.
-    // 2.1.0 - TWO-PHASE EXPORT: Phase 1 pre-renders frames, Phase 2 plays back at exact FPS (but was recording during both phases)
-    // 2.0.0 - Real-time capture attempt (failed - tile loading too slow, only got 7 FPS)
-    // 1.9.3 - Manual requestFrame() with timing (failed - no timing metadata preserved)
-    // 1.9.2 - captureStream(0) sequential (failed - frames need timed intervals)
-    // 1.9.1 - Enhanced cancel button visibility in export progress popup with better spacing and sizing
-    // 1.8.1 - Fixed video duration: Use absolute frame timing from export start, set timeslice=frameDuration, improved logging with drift tracking
-    // 1.8.0 - MAJOR: Added video duration control (5s-300s, default 60s). FPS now controls smoothness, duration controls animation length. Fixes low FPS issue!
-    // 1.7.4 - Fixed logging bugs: moved log after variable definition, use local frameStats instead of window, improved summary formatting with percentages
-    // 1.7.3 - Enhanced logging: Track fast/slow frames, show average processing time, theoretical vs actual export time for FPS debugging
-    // 1.7.2 - FPS Fix: Added frameRate to MediaRecorder options, use captureStream(targetFPS), added timeslice(100), improved logging for debugging
-    // 1.7.1 - DECOUPLED: Output FPS now independent of quality wait times. Uses captureStream(0) + frame timing control. FPS setting now actually works!
-    // 1.7.0 - Major performance: Skip tile waiting entirely when zoom unchanged (requestAnimationFrame only), reduced zoom wait to 100ms + 1500ms tiles
-    // 1.6.9 - Performance: Smart tile loading - only wait 2000ms when zoom changes, otherwise 100ms (15x faster export for non-zoom frames)
-    // 1.6.8 - Fix zoom in exported videos: force synchronous Leaflet zoom update with _resetView(), increase tile wait to 2000ms, increase post-zoom wait to 150ms
-    // 1.6.7 - [REVERTED] MP4-specific timing delays made export worse
-    // 1.6.6 - Add video format indicator to export progress overlay showing which format is being created (MP4, WebM VP9, or WebM VP8)
-    // 1.6.5 - Fix zoom-to-track in exported videos: remove invalidateSize from frame loop (was resetting zoom), add 100ms wait after zoom operations for tile loading
-    // 1.6.4 - Fix zoom-to-track in exported videos: apply zoom logic during frame-by-frame rendering, not just browser playback
-    // 1.6.3 - Performance: Reduced wait times from 150ms to 30ms (direct drawing eliminates canvas delays), fixed zoom-to-track by separating into independent useEffect
-    // 1.6.2 - iOS/Safari fix: Draw tracks directly to canvas, bypassing Leaflet renderer (Option A implementation)
-    // 1.6.1 - iOS/Safari video export fix: force Leaflet redraw, add canvas rendering wait (150ms), validate canvas content before capture
     // 1.6.0 - Mobile-friendly responsive design: hamburger menu, collapsible sidebar, touch-friendly controls, tablet support
     // 1.5.0 - Made progress bar interactive: click to jump, drag to scrub through animation
     // 1.4.4 - Enhanced codec detection with Safari debugging, try multiple MP4 formats, add conversion help for Safari users
-    // 1.9.0 - Add FFmpeg.wasm for automatic FPS correction, re-encode videos to match requested frame rate and duration
-    // 1.8.2 - Add video metadata inspection to measure actual encoded FPS, provide diagnostics for duration mismatch
-    // 1.8.1 - Absolute frame timing, dynamic timeslice, drift tracking for precise FPS
-    // 1.8.0 - Added video duration control (5-300s), decouple from fixed 10s assumption
-    // 1.7.4 - Fixed logging bugs, use local frameStats
-    // 1.7.3 - Enhanced logging with frame statistics
-    // 1.7.2 - Added frameRate parameter to MediaRecorder options
-    // 1.7.1 - Changed to captureStream(targetFPS) instead of 0
-    // 1.7.0 - MP4-specific timing delays (REVERTED - made it worse)
-    // 1.6.8 - Fix zoom-to-track in export by adding to frame loop with _resetView
-    // 1.6.7 - Optimize tile loading (only wait when zoom changes)
-    // 1.6.6 - Add export format indicator (MP4/WebM VP9/VP8)
-    // 1.6.5 - Fix zoom-to-track in browser playback (separate useEffect)
-    // 1.6.4 - Attempted zoom-to-track export fixes
-    // 1.6.3 - Separate zoom useEffect to prevent interruption
     // 1.4.3 - Added legend position control (top-left, top-right, bottom-left, bottom-right), default to bottom-left
     // 1.4.2 - Hybrid MP4/WebM export (MP4 on Safari, WebM on Chrome/Firefox), added server-side conversion comments for future
     // 1.4.1 - Fix legend rendering in exported video, optimize frame timing (1000ms + fast polling), show title in browser view
@@ -1074,12 +779,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "2.3.0";
-
-    // CONFIGURABLE: Initial map center when no tracks are loaded
-    // Default: Oahu, Hawaii [latitude, longitude]
-    const INITIAL_MAP_CENTER = [21.284, -157.718];
-    const INITIAL_MAP_ZOOM = 13;
+    const APP_VERSION = "1.6.0";
 
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
@@ -1098,20 +798,16 @@
       const [exportResolution, setExportResolution] = useState('1920x1080');
       const [exportQuality, setExportQuality] = useState('high');
       const [exportFPS, setExportFPS] = useState(30);
-      const [exportDuration, setExportDuration] = useState(60); // Video duration in seconds
       const [isRendering, setIsRendering] = useState(false);
       const [renderProgress, setRenderProgress] = useState(0);
-      const [exportFormat, setExportFormat] = useState('');
       const [videoTitle, setVideoTitle] = useState('');
-      const [titlePosition, setTitlePosition] = useState('top-center');
+      const [titlePosition, setTitlePosition] = useState('top-left');
       const [titleSize, setTitleSize] = useState(24);
       const [titleFont, setTitleFont] = useState('Arial');
       const [titleColor, setTitleColor] = useState('#ffffff');
       const [legendPosition, setLegendPosition] = useState('bottom-left');
       const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-      const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
-      const [centeredTrackId, setCenteredTrackId] = useState(null); // null = center on all tracks
-
+      
       const mapRef = useRef(null);
       const mapInstanceRef = useRef(null);
       const animationFrameRef = useRef(null);
@@ -1121,8 +817,6 @@
       const originalBoundsRef = useRef(null);
       const lastTimestampRef = useRef(null);
       const isPlayingRef = useRef(isPlaying);
-      const ffmpegRef = useRef(null);
-      const ffmpegLoadedRef = useRef(false);
 
       // Update resolution when aspect ratio changes
       useEffect(() => {
@@ -1133,22 +827,10 @@
         }
       }, [exportAspectRatio]);
 
-      // Video duration limits
-      const minVideoDuration = 10;
-      const maxVideoDuration = 60;
-
-      // Compute video duration from playback speed
-      // Faster speed = shorter video (base 60s at 1x speed)
-      useEffect(() => {
-        const computedDuration = Math.round(60 / speed);
-        const clampedDuration = Math.min(maxVideoDuration, Math.max(minVideoDuration, computedDuration));
-        setExportDuration(clampedDuration);
-      }, [speed]);
-
       useEffect(() => {
         // Initialize map
         if (!mapInstanceRef.current) {
-          const map = L.map('map', { preferCanvas: true }).setView(INITIAL_MAP_CENTER, INITIAL_MAP_ZOOM);
+          const map = L.map('map', { preferCanvas: true }).setView([37.7749, -122.4194], 12);
 
           // Use CORS-enabled satellite tiles from multiple sources layered
           // Base layer: OpenStreetMap (CORS enabled, always works)
@@ -1227,9 +909,8 @@
           points.push({ lat, lon, time });
         });
 
-        // Extract label from filename: use part before first underscore, or full name (minus .gpx) if no underscore
-        const baseName = filename.replace(/\.gpx$/i, '');
-        const defaultLabel = baseName.includes('_') ? baseName.split('_')[0] : baseName;
+        // Use track number for label
+        const defaultLabel = `Track ${trackNumber}`;
         let startTime = null;
         let endTime = null;
         let duration = null;
@@ -1438,11 +1119,11 @@
             }
           }
           
-          if (showAllTracks) {
-            // Show full track preview with track color at reduced opacity
+          if (showAllTracks || progress > 0) {
+            // Show full track in gray
             const fullLine = L.polyline(
               track.points.map(p => [p.lat, p.lon]),
-              { color: track.color, weight: 2, opacity: 0.3 }
+              { color: '#444', weight: 3, opacity: 0.5 }
             ).addTo(mapInstanceRef.current);
             polylineRefs.current.push(fullLine);
           }
@@ -1482,23 +1163,12 @@
             }
           }
         });
-      }, [tracks, progress, showAllTracks, showLabels, animationStyle]);
-
-      // Separate effect for zoom-to-track to prevent interruption during animation
-      useEffect(() => {
-        if (!mapInstanceRef.current || tracks.length === 0) return;
 
         // Handle zoom to track
         if (zoomToTrack && progress > 0 && progress < 100) {
-          // Collect current positions (either from all tracks or just the centered track)
+          // Collect all current positions
           const currentPositions = [];
-          const tracksToFollow = centeredTrackId
-            ? tracks.filter(t => t.id == centeredTrackId) // Use == to handle string/number comparison
-            : tracks;
-
-          tracksToFollow.forEach((track) => {
-            // Find the actual index of this track in the original tracks array
-            const trackIndex = tracks.findIndex(t => t.id === track.id);
+          tracks.forEach((track, trackIndex) => {
             let visiblePoints;
 
             if (animationStyle === 'sequential') {
@@ -1549,11 +1219,17 @@
           });
 
           if (currentPositions.length > 0) {
-            // Calculate center point of all current positions
-            const centerLat = currentPositions.reduce((sum, pos) => sum + pos[0], 0) / currentPositions.length;
-            const centerLon = currentPositions.reduce((sum, pos) => sum + pos[1], 0) / currentPositions.length;
-            // Always use setView with the zoom level for direct control
-            mapInstanceRef.current.setView([centerLat, centerLon], zoomLevel, { animate: false });
+            if (currentPositions.length === 1) {
+              mapInstanceRef.current.setView(currentPositions[0], zoomLevel, { animate: true, duration: 0.3 });
+            } else {
+              const bounds = L.latLngBounds(currentPositions);
+              mapInstanceRef.current.fitBounds(bounds, {
+                padding: [100, 100],
+                maxZoom: zoomLevel,
+                animate: true,
+                duration: 0.3
+              });
+            }
           }
         } else if (progress === 0 || progress >= 100) {
           // Zoom out to show all tracks
@@ -1565,7 +1241,7 @@
             });
           }
         }
-      }, [tracks, progress, animationStyle, zoomToTrack, zoomLevel, centeredTrackId]);
+      }, [tracks, progress, showAllTracks, showLabels, animationStyle, zoomToTrack, zoomLevel]);
 
       const togglePlay = () => {
         if (tracks.length === 0) return;
@@ -1589,15 +1265,6 @@
 
       const closeSidebar = () => {
         setIsSidebarOpen(false);
-      };
-
-      // Help modal toggle
-      const toggleHelpModal = () => {
-        setIsHelpModalOpen(!isHelpModalOpen);
-      };
-
-      const closeHelpModal = () => {
-        setIsHelpModalOpen(false);
       };
 
       // Handle progress bar scrubbing (click/drag to seek)
@@ -1675,116 +1342,8 @@
         return false; // Timeout
       };
 
-      // Helper: Convert lat/lon to pixel coordinates on canvas
-      const latLonToPixel = (lat, lon, mapBounds, canvasWidth, canvasHeight) => {
-        // Get map bounds
-        const north = mapBounds.getNorth();
-        const south = mapBounds.getSouth();
-        const east = mapBounds.getEast();
-        const west = mapBounds.getWest();
-
-        // Convert to pixels
-        const x = ((lon - west) / (east - west)) * canvasWidth;
-        const y = ((north - lat) / (north - south)) * canvasHeight;
-
-        return { x, y };
-      };
-
-      // Helper: Draw track polylines directly to canvas (iOS/Safari fix)
-      const drawTracksDirect = (ctx, tracks, progressPercent, mapBounds, canvasWidth, canvasHeight, animStyle, shouldShowAllTracks = true) => {
-        if (!tracks || tracks.length === 0) return;
-
-        tracks.forEach(track => {
-          if (!track.points || track.points.length === 0) return;
-
-          // Draw full track preview (grayed out) if enabled
-          if (shouldShowAllTracks && track.points.length >= 2) {
-            ctx.beginPath();
-            ctx.strokeStyle = track.color;
-            ctx.globalAlpha = 0.3; // Dim opacity for preview
-            ctx.lineWidth = 2;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-
-            const firstPreviewPoint = latLonToPixel(track.points[0].lat, track.points[0].lon, mapBounds, canvasWidth, canvasHeight);
-            ctx.moveTo(firstPreviewPoint.x, firstPreviewPoint.y);
-
-            for (let i = 1; i < track.points.length; i++) {
-              const point = latLonToPixel(track.points[i].lat, track.points[i].lon, mapBounds, canvasWidth, canvasHeight);
-              ctx.lineTo(point.x, point.y);
-            }
-
-            ctx.stroke();
-            ctx.globalAlpha = 1.0; // Reset opacity
-          }
-
-          // Calculate which points to show based on progress and animation style
-          let pointsToShow = [];
-
-          if (animStyle === 'simultaneous' && track.startTime && track.endTime) {
-            // Simultaneous mode: show based on absolute time
-            const allTracks = tracks.filter(t => t.startTime && t.endTime);
-            if (allTracks.length > 0) {
-              const earliestStart = Math.min(...allTracks.map(t => t.startTime.getTime()));
-              const latestEnd = Math.max(...allTracks.map(t => t.endTime.getTime()));
-              const currentTime = earliestStart + (latestEnd - earliestStart) * (progressPercent / 100);
-
-              // Show all points up to current time
-              pointsToShow = track.points.filter(p => {
-                if (!p.time) return true;
-                return new Date(p.time).getTime() <= currentTime;
-              });
-            } else {
-              // No time data, show proportionally
-              const numPoints = Math.floor((track.points.length * progressPercent) / 100);
-              pointsToShow = track.points.slice(0, numPoints);
-            }
-          } else {
-            // Sequential mode: show track proportionally
-            const numPoints = Math.floor((track.points.length * progressPercent) / 100);
-            pointsToShow = track.points.slice(0, numPoints);
-          }
-
-          if (pointsToShow.length < 2) return; // Need at least 2 points for a line
-
-          // Draw animated polyline (current progress)
-          ctx.beginPath();
-          ctx.strokeStyle = track.color;
-          ctx.lineWidth = 4;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-
-          // Convert first point to pixels
-          const firstPoint = latLonToPixel(pointsToShow[0].lat, pointsToShow[0].lon, mapBounds, canvasWidth, canvasHeight);
-          ctx.moveTo(firstPoint.x, firstPoint.y);
-
-          // Draw lines to subsequent points
-          for (let i = 1; i < pointsToShow.length; i++) {
-            const point = latLonToPixel(pointsToShow[i].lat, pointsToShow[i].lon, mapBounds, canvasWidth, canvasHeight);
-            ctx.lineTo(point.x, point.y);
-          }
-
-          ctx.stroke();
-
-          // Draw position marker (white circle) at current position
-          if (pointsToShow.length > 0) {
-            const lastPoint = pointsToShow[pointsToShow.length - 1];
-            const lastPixel = latLonToPixel(lastPoint.lat, lastPoint.lon, mapBounds, canvasWidth, canvasHeight);
-
-            // Draw outer white circle
-            ctx.beginPath();
-            ctx.arc(lastPixel.x, lastPixel.y, 6, 0, 2 * Math.PI);
-            ctx.fillStyle = track.color;
-            ctx.fill();
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-          }
-        });
-      };
-
       // Function to capture a single frame
-      const captureFrame = (mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, titleText, titlePos, titleFontSize, titleFontFamily, titleTextColor, shouldShowLegend, currentTracks, legendPos, currentProgress, currentAnimStyle, mapInstance, shouldShowAllTracks) => {
+      const captureFrame = (mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, titleText, titlePos, titleFontSize, titleFontFamily, titleTextColor, shouldShowLegend, currentTracks, legendPos) => {
         const ctx = compositeCanvas.getContext('2d');
         const currentMapRect = mapContainer.getBoundingClientRect();
 
@@ -1823,55 +1382,18 @@
 
         // 2. Draw canvas layers (tracks, markers)
         const currentCanvases = Array.from(mapContainer.querySelectorAll('canvas'));
-        let canvasesDrawn = 0;
-        let canvasesSkipped = 0;
-
-        currentCanvases.forEach((canvas, idx) => {
+        currentCanvases.forEach(canvas => {
           if (canvas.width > 0 && canvas.height > 0) {
             try {
               const rect = canvas.getBoundingClientRect();
               const canvasOffsetX = rect.left - currentMapRect.left;
               const canvasOffsetY = rect.top - currentMapRect.top;
-
-              // Check if canvas has content (not blank)
-              const testCtx = canvas.getContext('2d');
-              const imageData = testCtx.getImageData(0, 0, Math.min(canvas.width, 10), Math.min(canvas.height, 10));
-              let hasPixels = false;
-              for (let i = 3; i < imageData.data.length; i += 4) {
-                if (imageData.data[i] > 0) {
-                  hasPixels = true;
-                  break;
-                }
-              }
-
-              if (hasPixels) {
-                ctx.drawImage(canvas, canvasOffsetX, canvasOffsetY);
-                canvasesDrawn++;
-              } else {
-                canvasesSkipped++;
-              }
+              ctx.drawImage(canvas, canvasOffsetX, canvasOffsetY);
             } catch (e) {
               console.warn('Could not draw canvas:', e);
             }
           }
         });
-
-        // Debug: log canvas rendering info (iOS troubleshooting)
-        if (canvasesDrawn === 0 && currentCanvases.length > 0) {
-          console.warn(`⚠️ Warning: Found ${currentCanvases.length} canvases but none had content. Tracks may not appear in video.`);
-          console.log('→ Using direct track rendering fallback (iOS/Safari fix)');
-        }
-
-        // 2b. Draw tracks directly (iOS/Safari fallback - bypasses Leaflet canvas)
-        // This ensures tracks always appear even if Leaflet's canvas renderer fails
-        if (mapInstance && currentTracks && currentTracks.length > 0) {
-          try {
-            const mapBounds = mapInstance.getBounds();
-            drawTracksDirect(ctx, currentTracks, currentProgress, mapBounds, sourceWidth, sourceHeight, currentAnimStyle, shouldShowAllTracks);
-          } catch (e) {
-            console.warn('Could not draw tracks directly:', e);
-          }
-        }
 
         // 3. Draw track labels
         const labels = Array.from(mapContainer.querySelectorAll('.map-label'));
@@ -2028,108 +1550,8 @@
         ctx.restore();
       };
 
-      // Load FFmpeg.wasm for video FPS correction
-      const loadFFmpeg = async () => {
-        if (ffmpegLoadedRef.current) {
-          return ffmpegRef.current;
-        }
-
-        try {
-          console.log('Loading FFmpeg.wasm...');
-          const { createFFmpeg } = FFmpeg;
-
-          const ffmpeg = createFFmpeg({
-            log: true,
-            corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
-          });
-
-          await ffmpeg.load();
-
-          ffmpegRef.current = ffmpeg;
-          ffmpegLoadedRef.current = true;
-          console.log('✓ FFmpeg.wasm loaded successfully');
-          return ffmpeg;
-        } catch (err) {
-          console.error('Failed to load FFmpeg.wasm:', err);
-          return null;
-        }
-      };
-
-      // Correct video FPS using FFmpeg
-      const correctVideoFPS = async (inputBlob, targetFPS, mimeType) => {
-        try {
-          console.log('\n=== FFmpeg FPS Correction ===');
-          console.log(`Correcting video to ${targetFPS} FPS...`);
-
-          const ffmpeg = await loadFFmpeg();
-          if (!ffmpeg) {
-            console.error('FFmpeg not available, skipping FPS correction');
-            return inputBlob;
-          }
-
-          const { fetchFile } = FFmpeg;
-
-          // Write input file to FFmpeg virtual filesystem
-          const inputExt = mimeType.includes('mp4') ? 'mp4' : 'webm';
-          const outputExt = inputExt;
-
-          ffmpeg.FS('writeFile', `input.${inputExt}`, await fetchFile(inputBlob));
-
-          // Run FFmpeg to change FPS
-          // -i input: input file
-          // -filter:v fps=30: set output frame rate to 30 FPS
-          // -c:v libvpx-vp9 (for webm) or libx264 (for mp4): video codec
-          const codec = outputExt === 'mp4' ? 'libx264' : 'libvpx-vp9';
-          await ffmpeg.run(
-            '-i', `input.${inputExt}`,
-            '-filter:v', `fps=${targetFPS}`,
-            '-c:v', codec,
-            '-preset', 'fast',
-            '-crf', '22',
-            `output.${outputExt}`
-          );
-
-          // Read output file
-          const data = ffmpeg.FS('readFile', `output.${outputExt}`);
-
-          // Clean up FFmpeg filesystem
-          ffmpeg.FS('unlink', `input.${inputExt}`);
-          ffmpeg.FS('unlink', `output.${outputExt}`);
-
-          // Convert to Blob
-          const correctedBlob = new Blob([data.buffer], { type: mimeType });
-          console.log('✓ FPS correction complete');
-          console.log('=============================\n');
-
-          return correctedBlob;
-        } catch (err) {
-          console.error('FFmpeg FPS correction failed:', err);
-          console.log('Falling back to original video');
-          return inputBlob;
-        }
-      };
-
       const startRecording = async () => {
         try {
-          // Detect iOS devices (iPhone, iPad, iPod)
-          const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-                        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPad on iOS 13+
-
-          if (isIOS) {
-            // iOS doesn't support MediaRecorder API properly - show helpful message
-            alert(
-              '📱 Video Export Not Available on iOS\n\n' +
-              'Unfortunately, iOS Safari does not support the MediaRecorder API needed for video export.\n\n' +
-              '✅ How to Record on iOS:\n' +
-              '1. Open Control Center (swipe down from top-right)\n' +
-              '2. Tap the Screen Recording button (circle icon)\n' +
-              '3. Start your animation playback\n' +
-              '4. Recording saves to Photos app\n\n' +
-              '💻 Alternative: Use a desktop browser (Chrome, Firefox, or Safari on Mac) for built-in video export.'
-            );
-            return;
-          }
-
           const mapContainer = mapInstanceRef.current.getContainer();
           const initialCanvases = Array.from(mapContainer.querySelectorAll('canvas'));
 
@@ -2195,17 +1617,13 @@
           const bitsPerPixelFrame = qualityPresets[exportQuality] || qualityPresets['high'];
           const targetBitrate = Math.round(pixelCount * targetFPS * bitsPerPixelFrame);
 
-          // Use captureStream(0) for manual frame capture control
-          // This gives us precise control over when frames are captured
-          // We'll manually call requestFrame() after each frame is drawn
-          const stream = compositeCanvas.captureStream(0);
-          const videoTrack = stream.getVideoTracks()[0];
+          // Use manual frame capture with specified FPS for consistent encoding
+          const stream = compositeCanvas.captureStream(targetFPS); // Set FPS for consistent frame rate
           compositeStreamRef.current = stream;
 
           let options = {
             videoBitsPerSecond: targetBitrate,
-            bitsPerSecond: targetBitrate,
-            frameRate: targetFPS  // Explicitly tell encoder the target frame rate
+            bitsPerSecond: targetBitrate
           };
           let mimeType = 'video/webm';
           let fileExtension = 'webm';
@@ -2249,7 +1667,6 @@
               mimeType = 'video/mp4';
               fileExtension = 'mp4';
               mp4Supported = true;
-              setExportFormat('MP4');
               console.log(`✓ Recording format: MP4 (${codec})`);
               console.log('→ Native MP4 output - no conversion needed!');
               break;
@@ -2263,20 +1680,17 @@
               options.mimeType = 'video/webm;codecs=vp9';
               mimeType = 'video/webm';
               fileExtension = 'webm';
-              setExportFormat('WebM (VP9)');
               console.log('✓ Recording format: WebM (VP9)');
             } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
               // WebM with VP8 codec (Safari, older browsers)
               options.mimeType = 'video/webm;codecs=vp8';
               mimeType = 'video/webm';
               fileExtension = 'webm';
-              setExportFormat('WebM (VP8)');
               console.log('✓ Recording format: WebM (VP8)');
             } else if (MediaRecorder.isTypeSupported('video/webm')) {
               // WebM with default codec
               options.mimeType = 'video/webm';
               fileExtension = 'webm';
-              setExportFormat('WebM');
               console.log('✓ Recording format: WebM (default codec)');
             }
 
@@ -2296,7 +1710,6 @@
 
           const recorder = new MediaRecorder(stream, options);
           recordedChunksRef.current = [];
-          mediaRecorderRef.current = recorder;
 
           recorder.ondataavailable = (e) => {
             if (e.data.size > 0) {
@@ -2304,7 +1717,7 @@
             }
           };
 
-          recorder.onstop = async () => {
+          recorder.onstop = () => {
             // Restore original map size
             if (originalMapSizeRef.current) {
               mapContainer.style.width = originalMapSizeRef.current.width;
@@ -2317,99 +1730,11 @@
               console.warn('No data recorded');
               setIsRendering(false);
               setIsRecording(false);
-              setExportFormat('');
               isRecordingRef.current = false;
               return;
             }
 
-            let blob = new Blob(recordedChunksRef.current, { type: mimeType });
-
-            // DIAGNOSTIC: Inspect video metadata to measure actual encoded FPS
-            console.log('\n=== Video Metadata Inspection ===');
-            let needsFPSCorrection = false;
-            try {
-              const blobUrl = URL.createObjectURL(blob);
-              const videoElement = document.createElement('video');
-
-              await new Promise((resolve, reject) => {
-                videoElement.onloadedmetadata = async () => {
-                  const actualDuration = videoElement.duration;
-                  const expectedDuration = exportDuration;
-                  const actualFPS = totalFrames / actualDuration;
-                  const expectedFPS = targetFPS;
-                  const durationRatio = actualDuration / expectedDuration;
-
-                  console.log(`Expected: ${totalFrames} frames, ${expectedFPS} FPS, ${expectedDuration}s duration`);
-                  console.log(`Actual video: ${actualDuration.toFixed(2)}s duration`);
-                  console.log(`Calculated FPS: ${actualFPS.toFixed(2)} FPS`);
-                  console.log(`Duration ratio: ${durationRatio.toFixed(2)}x (${durationRatio > 1 ? 'LONGER' : 'shorter'} than expected)`);
-
-                  if (Math.abs(durationRatio - 1.0) > 0.1) {
-                    console.warn(`⚠️  VIDEO DURATION MISMATCH DETECTED`);
-                    console.warn(`Expected ${expectedDuration}s but got ${actualDuration.toFixed(2)}s`);
-                    console.warn(`The browser's MediaRecorder is encoding at ~${actualFPS.toFixed(1)} FPS instead of ${expectedFPS} FPS`);
-                    console.warn(`\nApplying automatic FPS correction with FFmpeg.wasm...`);
-                    needsFPSCorrection = true;
-                  } else {
-                    console.log('✓ Video duration matches expected (within 10% tolerance)');
-                  }
-
-                  URL.revokeObjectURL(blobUrl);
-                  resolve();
-                };
-
-                videoElement.onerror = (e) => {
-                  console.error('Failed to load video metadata:', e);
-                  URL.revokeObjectURL(blobUrl);
-                  reject(e);
-                };
-
-                videoElement.src = blobUrl;
-              });
-            } catch (err) {
-              console.error('Video metadata inspection failed:', err);
-            }
-            console.log('=================================\n');
-
-            // Apply FPS correction if needed
-            if (needsFPSCorrection) {
-              blob = await correctVideoFPS(blob, targetFPS, mimeType);
-
-              // Verify correction worked
-              console.log('\n=== Verifying FPS Correction ===');
-              try {
-                const blobUrl = URL.createObjectURL(blob);
-                const videoElement = document.createElement('video');
-
-                await new Promise((resolve, reject) => {
-                  videoElement.onloadedmetadata = () => {
-                    const correctedDuration = videoElement.duration;
-                    const correctedFPS = totalFrames / correctedDuration;
-                    console.log(`Corrected video: ${correctedDuration.toFixed(2)}s duration`);
-                    console.log(`Corrected FPS: ${correctedFPS.toFixed(2)} FPS`);
-
-                    if (Math.abs(correctedDuration - exportDuration) < exportDuration * 0.1) {
-                      console.log('✓ FPS correction successful!');
-                    } else {
-                      console.warn('⚠️  Correction may not be perfect, but should be improved');
-                    }
-
-                    URL.revokeObjectURL(blobUrl);
-                    resolve();
-                  };
-
-                  videoElement.onerror = (e) => {
-                    URL.revokeObjectURL(blobUrl);
-                    reject(e);
-                  };
-
-                  videoElement.src = blobUrl;
-                });
-              } catch (err) {
-                console.error('Verification failed:', err);
-              }
-              console.log('=================================\n');
-            }
+            const blob = new Blob(recordedChunksRef.current, { type: mimeType });
 
             // OPTION 5 (SERVER-SIDE CONVERSION) - Future Implementation:
             // If you want to always provide MP4 output regardless of browser:
@@ -2448,7 +1773,6 @@
             // Cleanup
             setIsRendering(false);
             setIsRecording(false);
-            setExportFormat('');
             isRecordingRef.current = false;
 
             if (compositeStreamRef.current) {
@@ -2459,31 +1783,18 @@
             renderCancelledRef.current = false;
           };
 
-          // Setup (don't start recording yet - wait for Phase 2)
-          const frameDuration = 1000 / targetFPS; // ms per frame at target FPS
-
-          setIsRecording(false); // Not recording yet
+          recorder.start();
+          mediaRecorderRef.current = recorder;
+          setIsRecording(true);
           setIsRendering(true);
           setRenderProgress(0);
-          isRecordingRef.current = false;
+          isRecordingRef.current = true;
           renderCancelledRef.current = false;
 
-          // TWO-PHASE EXPORT: Pre-render frames, then play back at correct FPS
-          // Phase 1: Render all frames (slow, waits for tiles)
-          // Phase 2: Play back frames at exact FPS while capturing
-          const totalFrames = Math.round(exportDuration * targetFPS);
+          // Frame-by-frame rendering with manual frame requests
+          const totalFrames = Math.round(10 * targetFPS); // 10 seconds at selected FPS
+          const videoTrack = stream.getVideoTracks()[0];
 
-          console.log(`Starting 2-phase video export: ${totalFrames} frames at ${targetFPS} FPS`);
-          console.log(`Phase 1: Pre-rendering ${totalFrames} frames (waits for tiles)`);
-
-          // Track zoom state
-          let lastZoomLevel = mapInstanceRef.current.getZoom();
-          let lastCenter = mapInstanceRef.current.getCenter();
-
-          const exportStartTime = Date.now();
-          const renderedFrames = []; // Array to store rendered frame ImageData
-
-          // PHASE 1: Pre-render all frames
           for (let frame = 0; frame <= totalFrames; frame++) {
             if (renderCancelledRef.current) {
               break;
@@ -2496,205 +1807,22 @@
             // Wait for React to update and render
             await new Promise(resolve => requestAnimationFrame(resolve));
 
-            // Track whether zoom changed this frame
-            let zoomChanged = false;
+            // Wait for tiles to load (1000ms with fast polling for quality + consistency)
+            await waitForTilesToLoad(mapContainer, 1000);
 
-            // Apply zoom-to-track for this frame if enabled
-            if (zoomToTrack && progressValue > 0 && progressValue < 100 && mapInstanceRef.current && tracks.length > 0) {
-              const currentPositions = [];
-              const tracksToFollow = centeredTrackId
-                ? tracks.filter(t => t.id == centeredTrackId) // Use == to handle string/number comparison
-                : tracks;
+            // Capture frame to canvas
+            captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks, legendPosition);
 
-              tracksToFollow.forEach((track) => {
-                // Find the actual index of this track in the original tracks array
-                const trackIndex = tracks.findIndex(t => t.id === track.id);
-                let visiblePoints;
-
-                if (animationStyle === 'sequential') {
-                  const tracksBeforeThis = tracks.slice(0, trackIndex);
-                  const totalPointsBefore = tracksBeforeThis.reduce((sum, t) => sum + t.points.length, 0);
-                  const totalPoints = tracks.reduce((sum, t) => sum + t.points.length, 0);
-                  const currentTotalPoint = Math.floor((progressValue / 100) * totalPoints);
-                  const pointsForThisTrack = Math.max(0, currentTotalPoint - totalPointsBefore);
-                  visiblePoints = track.points.slice(0, Math.min(pointsForThisTrack, track.points.length));
-                } else {
-                  // Simultaneous - use absolute time-based synchronization if available
-                  if (track.duration && track.startTime) {
-                    const tracksWithTime = tracks.filter(t => t.startTime && t.endTime);
-                    const earliestStart = Math.min(...tracksWithTime.map(t => t.startTime.getTime()));
-                    const latestEnd = Math.max(...tracksWithTime.map(t => t.endTime.getTime()));
-                    const totalTimeSpan = latestEnd - earliestStart;
-
-                    const currentAbsoluteTime = earliestStart + (progressValue / 100) * totalTimeSpan;
-
-                    if (currentAbsoluteTime < track.startTime.getTime()) {
-                      visiblePoints = [];
-                    } else {
-                      let pointIndex = 0;
-                      for (let i = 0; i < track.points.length; i++) {
-                        if (track.points[i].time) {
-                          const pointTime = new Date(track.points[i].time);
-
-                          if (pointTime.getTime() <= currentAbsoluteTime) {
-                            pointIndex = i;
-                          } else {
-                            break;
-                          }
-                        }
-                      }
-
-                      visiblePoints = track.points.slice(0, pointIndex + 1);
-                    }
-                  } else {
-                    const pointCount = Math.floor((progressValue / 100) * track.points.length);
-                    visiblePoints = track.points.slice(0, pointCount);
-                  }
-                }
-
-                if (visiblePoints.length > 0) {
-                  const lastPoint = visiblePoints[visiblePoints.length - 1];
-                  currentPositions.push([lastPoint.lat, lastPoint.lon]);
-                }
-              });
-
-              if (currentPositions.length > 0) {
-                // Calculate center point of all current positions
-                const centerLat = currentPositions.reduce((sum, pos) => sum + pos[0], 0) / currentPositions.length;
-                const centerLon = currentPositions.reduce((sum, pos) => sum + pos[1], 0) / currentPositions.length;
-                // Always use setView with the zoom level for direct control
-                mapInstanceRef.current.setView([centerLat, centerLon], zoomLevel, { animate: false });
-
-                // Force Leaflet to immediately apply the zoom and start loading tiles
-                mapInstanceRef.current.invalidateSize(false);
-                mapInstanceRef.current._resetView(mapInstanceRef.current.getCenter(), mapInstanceRef.current.getZoom());
-
-                // Always wait for tiles when zoom-to-track is enabled (position changes every frame)
-                zoomChanged = true;
-                lastZoomLevel = mapInstanceRef.current.getZoom();
-                lastCenter = mapInstanceRef.current.getCenter();
-                // Wait for zoom and tiles to ensure proper rendering
-                await new Promise(resolve => setTimeout(resolve, 150));
-                await waitForTilesToLoad(mapContainer, 2000);
-              }
-            } else if (progressValue === 0 || progressValue >= 100) {
-              // Zoom out to show all tracks at start/end
-              if (tracks.length > 0 && originalBoundsRef.current && mapInstanceRef.current) {
-                mapInstanceRef.current.fitBounds(originalBoundsRef.current, {
-                  padding: [50, 50],
-                  animate: false
-                });
-                // Force Leaflet to immediately apply the zoom
-                mapInstanceRef.current.invalidateSize(false);
-                mapInstanceRef.current._resetView(mapInstanceRef.current.getCenter(), mapInstanceRef.current.getZoom());
-
-                // Always wait for tiles at start/end (zoom changes)
-                zoomChanged = true;
-                lastZoomLevel = mapInstanceRef.current.getZoom();
-                lastCenter = mapInstanceRef.current.getCenter();
-                // Wait for zoom and tiles
-                await new Promise(resolve => setTimeout(resolve, 150));
-                await waitForTilesToLoad(mapContainer, 2000);
-              }
-            }
-
-            // Always wait for at least one frame to ensure rendering completes
-            if (!zoomChanged) {
-              await new Promise(resolve => requestAnimationFrame(resolve));
-            }
-
-            // Render frame to canvas
-            captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks, legendPosition, progressValue, animationStyle, mapInstanceRef.current, showAllTracks);
-
-            // Save frame as ImageData
-            const ctx = compositeCanvas.getContext('2d');
-            const frameData = ctx.getImageData(0, 0, exportWidth, exportHeight);
-            renderedFrames.push(frameData);
-
-            // Log progress
-            if (frame % 50 === 0) {
-              console.log(`Pre-rendered frame ${frame}/${totalFrames} (${progressValue.toFixed(1)}%)`);
-            }
-          }
-
-          if (renderCancelledRef.current) {
-            console.log('Export cancelled during pre-render phase');
-            setIsRendering(false);
-            setIsRecording(false);
-            isRecordingRef.current = false;
-
-            // Restore map size
-            if (originalMapSizeRef.current) {
-              mapContainer.style.width = originalMapSizeRef.current.width;
-              mapContainer.style.height = originalMapSizeRef.current.height;
-              mapInstanceRef.current.invalidateSize();
-              originalMapSizeRef.current = null;
-            }
-            return;
-          }
-
-          const preRenderTime = Date.now() - exportStartTime;
-          console.log(`Phase 1 complete: ${renderedFrames.length} frames rendered in ${(preRenderTime/1000).toFixed(1)}s`);
-          console.log(`Phase 2: Playing back frames at ${targetFPS} FPS while recording`);
-          console.log(`⏱️  Playback will take ${exportDuration}s in real-time`);
-
-          // START RECORDING NOW (only for Phase 2 playback)
-          recorder.start(Math.max(10, Math.floor(frameDuration)));
-          setIsRecording(true);
-          isRecordingRef.current = true;
-          console.log('🔴 Recording started');
-
-          // PHASE 2: Play back frames at correct FPS
-          const playbackStartTime = Date.now();
-          const playbackInterval = frameDuration; // Exact interval for target FPS
-
-          for (let i = 0; i < renderedFrames.length; i++) {
-            if (renderCancelledRef.current) {
-              break;
-            }
-
-            const targetTime = playbackStartTime + (i * playbackInterval);
-
-            // Draw pre-rendered frame to canvas
-            const ctx = compositeCanvas.getContext('2d');
-            ctx.putImageData(renderedFrames[i], 0, 0);
-
-            // Manually request frame capture - this ensures the frame is captured
-            // exactly when we want it, eliminating timing jitter
-            if (videoTrack.requestFrame) {
+            // Manually request frame from stream (for captureStream(0) mode)
+            if (videoTrack && videoTrack.requestFrame) {
               videoTrack.requestFrame();
             }
 
-            // Update progress
-            const playbackProgress = (i / renderedFrames.length) * 100;
-            setRenderProgress(playbackProgress);
-
-            // Wait until exact target time for consistent FPS
-            const now = Date.now();
-            const waitTime = targetTime - now;
-            if (waitTime > 0) {
-              await new Promise(resolve => setTimeout(resolve, waitTime));
-            }
-
-            // Log every 30 frames
-            if (i % 30 === 0) {
-              const elapsed = (Date.now() - playbackStartTime) / 1000;
-              console.log(`Playback: frame ${i}/${renderedFrames.length} (${elapsed.toFixed(1)}s elapsed)`);
-            }
+            // Small delay to ensure MediaRecorder processes the frame
+            await new Promise(resolve => setTimeout(resolve, 16)); // ~60fps timing
           }
 
-          // Stop recording - show summary
-          const totalExportTime = Date.now() - exportStartTime;
-          const playbackTime = Date.now() - playbackStartTime;
-          console.log(`\n=== Export Complete ===`);
-          console.log(`Phase 1 (pre-render): ${(preRenderTime/1000).toFixed(1)}s`);
-          console.log(`Phase 2 (playback): ${(playbackTime/1000).toFixed(1)}s`);
-          console.log(`Total export time: ${(totalExportTime/1000).toFixed(1)}s`);
-          console.log(`Frames rendered: ${renderedFrames.length}`);
-          console.log(`Expected video: ${totalFrames} frames at ${targetFPS} FPS = ${exportDuration}s`);
-          console.log(`\nℹ️  Video metadata will be inspected when encoding completes...`);
-          console.log(`===================================\n`);
-
+          // Stop recording
           if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
             mediaRecorderRef.current.stop();
           }
@@ -2729,7 +1857,6 @@
         isRecordingRef.current = false;
         setIsRendering(false);
         setIsRecording(false);
-        setExportFormat('');
 
         // Cleanup composite canvas if it exists
         if (compositeStreamRef.current) {
@@ -2785,12 +1912,7 @@
               <h1>🗺️ Flyin Amas GPX Track Animator</h1>
               <p>Upload your GPX files and create animated track videos</p>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <div className="version">v{APP_VERSION}</div>
-              <button className="help-btn" onClick={toggleHelpModal}>
-                ❓ Help
-              </button>
-            </div>
+            <div className="version">v{APP_VERSION}</div>
           </div>
           
           <div className="main-container">
@@ -2973,42 +2095,18 @@
                     </div>
 
                     {zoomToTrack && (
-                      <>
-                        <div className="control-group">
-                          <div className="control-label">Centered Track</div>
-                          <select
-                            className="select"
-                            value={centeredTrackId || ''}
-                            onChange={(e) => setCenteredTrackId(e.target.value ? e.target.value : null)}
-                          >
-                            <option value="">All Tracks (Default)</option>
-                            {tracks.map(track => (
-                              <option key={track.id} value={track.id}>{track.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="control-group">
-                          {(() => {
-                            const baseZoomLevel = 15; // Default zoom level
-                            const relativeZoom = zoomLevel - baseZoomLevel;
-                            const displayZoom = relativeZoom > 0 ? `+${relativeZoom}` : relativeZoom === 0 ? '0' : `${relativeZoom}`;
-                            return (
-                              <>
-                                <div className="control-label">Zoom Level: {displayZoom}</div>
-                                <input
-                                  type="range"
-                                  className="slider"
-                                  min="12"
-                                  max="18"
-                                  step="1"
-                                  value={zoomLevel}
-                                  onChange={(e) => setZoomLevel(parseInt(e.target.value))}
-                                />
-                              </>
-                            );
-                          })()}
-                        </div>
-                      </>
+                      <div className="control-group">
+                        <div className="control-label">Zoom Level: {zoomLevel}</div>
+                        <input
+                          type="range"
+                          className="slider"
+                          min="12"
+                          max="18"
+                          step="1"
+                          value={zoomLevel}
+                          onChange={(e) => setZoomLevel(parseInt(e.target.value))}
+                        />
+                      </div>
                     )}
                   </div>
                   
@@ -3076,20 +2174,6 @@
                           <option value="30">30 FPS (Standard)</option>
                           <option value="60">60 FPS (Smooth)</option>
                         </select>
-                      </div>
-                      <div style={{ marginBottom: '12px', padding: '10px', backgroundColor: 'rgba(252, 76, 2, 0.1)', borderRadius: '6px', border: '1px solid rgba(252, 76, 2, 0.3)' }}>
-                        <label style={{ fontSize: '12px', color: '#ccc', display: 'block', marginBottom: '4px' }}>
-                          Video Duration (based on {speed}x speed)
-                        </label>
-                        <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#fc4c02' }}>
-                          {exportDuration}s
-                          <span style={{ fontSize: '12px', fontWeight: 'normal', color: '#999', marginLeft: '8px' }}>
-                            ({(exportDuration * exportFPS).toLocaleString()} frames)
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '10px', color: '#666', marginTop: '4px' }}>
-                          Adjust playback speed to change video duration
-                        </div>
                       </div>
 
                       <div className="control-label" style={{ marginTop: '20px' }}>Video Title</div>
@@ -3232,11 +2316,6 @@
                       Please wait while frames are being captured with fully loaded map tiles.
                       This process ensures high-quality output.
                     </div>
-                    {exportFormat && (
-                      <div className="export-format-indicator">
-                        Format: {exportFormat}
-                      </div>
-                    )}
                     <div className="progress-text">{Math.round(renderProgress)}%</div>
                     <div className="progress-bar-container">
                       <div className="progress-bar-fill" style={{ width: `${renderProgress}%` }}></div>
@@ -3305,229 +2384,6 @@
               <div id="map" ref={mapRef}></div>
             </div>
           </div>
-
-          {/* Help Modal */}
-          {isHelpModalOpen && (
-            <div className="help-modal-overlay" onClick={closeHelpModal}>
-              <div className="help-modal" onClick={(e) => e.stopPropagation()}>
-                <div className="help-modal-header">
-                  <h1 className="help-modal-title">Help & Guide</h1>
-                  <button className="help-modal-close" onClick={closeHelpModal}>×</button>
-                </div>
-                <div className="help-modal-content">
-
-                  {/* What is this app? */}
-                  <div className="help-section">
-                    <h2>What is Flyin Amas GPX Track Animator?</h2>
-                    <p>
-                      This web application allows you to visualize and animate GPS tracks from GPX files.
-                      Upload your GPS data from activities like running, cycling, paddling, or flying, and
-                      create beautiful animated videos showing your route on a satellite map.
-                    </p>
-                    <div className="feature-list">
-                      <ul>
-                        <li>Animate single or multiple GPS tracks simultaneously</li>
-                        <li>Customize track colors, labels, and appearance</li>
-                        <li>Export high-quality videos (up to 4K resolution)</li>
-                        <li>Control animation speed, zoom, and playback style</li>
-                        <li>Add custom video titles and legends</li>
-                        <li>Works entirely in your browser - no server upload required</li>
-                      </ul>
-                    </div>
-                  </div>
-
-                  {/* How to use */}
-                  <div className="help-section">
-                    <h2>How to Use</h2>
-                    <ol>
-                      <li><strong>Upload GPX files:</strong> Drag and drop your GPX files into the upload zone, or click to browse</li>
-                      <li><strong>Customize tracks:</strong> Edit track labels, change colors, and adjust settings in the sidebar</li>
-                      <li><strong>Preview animation:</strong> Click Play to see how your tracks will animate on the map</li>
-                      <li><strong>Adjust settings:</strong> Control animation speed, zoom level, and display options</li>
-                      <li><strong>Export video:</strong> Configure video settings (resolution, duration, FPS) and click "Export Video"</li>
-                      <li><strong>Download:</strong> Wait for the export to complete, then download your animated video</li>
-                    </ol>
-                    <p>
-                      <strong>Note for iOS users:</strong> Video export is not supported on iPhone/iPad due to browser limitations.
-                      Please use a desktop browser or use iOS Screen Recording while playing the animation.
-                    </p>
-                  </div>
-
-                  {/* FAQ */}
-                  <div className="help-section">
-                    <h2>Frequently Asked Questions</h2>
-
-                    <div className="faq-item">
-                      <div className="faq-question">What is a GPX file?</div>
-                      <div className="faq-answer">
-                        GPX (GPS Exchange Format) is a standard XML format for storing GPS data including waypoints,
-                        routes, and tracks. It's universally supported by GPS devices and fitness tracking apps.
-                        GPX files contain latitude/longitude coordinates and optionally timestamps, elevation,
-                        and other metadata about your recorded activities.
-                      </div>
-                    </div>
-
-                    <div className="faq-item">
-                      <div className="faq-question">How do I get GPX files from my fitness tracking app?</div>
-                      <div className="faq-answer">
-                        Most fitness apps allow you to export your activities as GPX files. See the detailed
-                        instructions below for popular apps like Strava, Garmin, and Paddle Logger.
-                      </div>
-                    </div>
-
-                    <div className="faq-item">
-                      <div className="faq-question">Can I animate multiple tracks at once?</div>
-                      <div className="faq-answer">
-                        Yes! Upload multiple GPX files and they'll all appear on the map. You can choose between
-                        "Simultaneous" mode (all tracks animate based on their actual GPS timestamps) or "Sequential"
-                        mode (tracks play one after another in upload order).
-                      </div>
-                    </div>
-
-                    <div className="faq-item">
-                      <div className="faq-question">What video formats are supported?</div>
-                      <div className="faq-answer">
-                        The app exports videos in WebM or MP4 format depending on your browser. Chrome and Firefox
-                        support WebM VP9 (best quality), while Safari may use WebM VP8 or MP4. All modern browsers
-                        can play the exported videos.
-                      </div>
-                    </div>
-
-                    <div className="faq-item">
-                      <div className="faq-question">Why is video export slow?</div>
-                      <div className="faq-answer">
-                        Video export uses a two-phase process: first pre-rendering all frames (which can take several
-                        minutes for high-resolution videos), then playing them back at the correct frame rate. Higher
-                        resolutions (like 4K), longer durations, and enabled "Zoom to Track" significantly increase
-                        export time. For faster exports, try lower resolutions or shorter durations.
-                      </div>
-                    </div>
-
-                    <div className="faq-item">
-                      <div className="faq-question">Is my GPS data uploaded to a server?</div>
-                      <div className="faq-answer">
-                        No! All processing happens entirely in your browser. Your GPX files are never uploaded to any
-                        server - everything stays private on your device.
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* How to download GPX files */}
-                  <div className="help-section">
-                    <h2>How to Download GPX Files from Popular Apps</h2>
-
-                    <h3><span className="app-badge">STRAVA</span></h3>
-                    <ol>
-                      <li>Log in to <a href="https://www.strava.com" target="_blank" rel="noopener noreferrer">Strava.com</a> on a desktop browser</li>
-                      <li>Navigate to your activity</li>
-                      <li>Click the three-dot menu (⋯) in the top right</li>
-                      <li>Select "Export GPX"</li>
-                      <li>The GPX file will download to your computer</li>
-                    </ol>
-                    <p><strong>Bulk export:</strong> Go to Settings → My Account → Download or Delete Your Account →
-                    Request Your Archive to download all activities at once.</p>
-
-                    <h3><span className="app-badge">GARMIN CONNECT</span></h3>
-                    <ol>
-                      <li>Log in to <a href="https://connect.garmin.com" target="_blank" rel="noopener noreferrer">Garmin Connect</a></li>
-                      <li>Open your activity</li>
-                      <li>Click the gear icon (⚙️) in the top right</li>
-                      <li>Select "Export to GPX"</li>
-                      <li>Save the file to your computer</li>
-                    </ol>
-                    <p><strong>Note:</strong> You can also export from the Garmin Connect mobile app:
-                    Open activity → Share icon → Export to GPX.</p>
-
-                    <h3><span className="app-badge">PADDLE LOGGER</span></h3>
-                    <ol>
-                      <li>Open the Paddle Logger app</li>
-                      <li>View your paddle session</li>
-                      <li>Tap the Share/Export button</li>
-                      <li>Select "Export as GPX"</li>
-                      <li>Choose where to save or share the file</li>
-                    </ol>
-                    <p><strong>Tip:</strong> You can email the GPX file to yourself or save it to cloud storage
-                    for easy access on your computer.</p>
-
-                    <h3><span className="app-badge">APPLE HEALTH / WORKOUTS</span></h3>
-                    <ol>
-                      <li>Download a third-party app like "HealthFit" or "RunGap" from the App Store</li>
-                      <li>Grant the app permission to read your Health data</li>
-                      <li>Select the workout you want to export</li>
-                      <li>Choose "Export as GPX"</li>
-                      <li>Share or save the GPX file</li>
-                    </ol>
-                    <p><strong>Note:</strong> Apple Health doesn't natively export GPX files, so you'll need
-                    a third-party app.</p>
-
-                    <h3><span className="app-badge">KOMOOT</span></h3>
-                    <ol>
-                      <li>Go to <a href="https://www.komoot.com" target="_blank" rel="noopener noreferrer">Komoot.com</a></li>
-                      <li>Open your completed tour</li>
-                      <li>Click "Export" or the download icon</li>
-                      <li>Select "GPX Track"</li>
-                      <li>Download the file</li>
-                    </ol>
-
-                    <h3><span className="app-badge">RELIVE</span></h3>
-                    <ol>
-                      <li>Open your activity in the Relive app or website</li>
-                      <li>Tap/click the Share button</li>
-                      <li>Select "Export GPX"</li>
-                      <li>Save or share the file</li>
-                    </ol>
-
-                    <h3><span className="app-badge">MAPMYRUN / MAPMYRIDE</span></h3>
-                    <ol>
-                      <li>Log in to <a href="https://www.mapmyrun.com" target="_blank" rel="noopener noreferrer">MapMyRun.com</a> or MapMyRide.com</li>
-                      <li>Go to your workout details</li>
-                      <li>Click the gear icon or "Export" button</li>
-                      <li>Choose "Export as GPX"</li>
-                      <li>Download the file</li>
-                    </ol>
-
-                    <h3><span className="app-badge">RIDE WITH GPS</span></h3>
-                    <ol>
-                      <li>Log in to <a href="https://ridewithgps.com" target="_blank" rel="noopener noreferrer">RideWithGPS.com</a></li>
-                      <li>Open your ride/trip</li>
-                      <li>Click "Export" in the menu</li>
-                      <li>Select "GPX Track"</li>
-                      <li>Download the file</li>
-                    </ol>
-
-                    <h3><span className="app-badge">WIKILOC</span></h3>
-                    <ol>
-                      <li>Go to <a href="https://www.wikiloc.com" target="_blank" rel="noopener noreferrer">Wikiloc.com</a></li>
-                      <li>Open your trail</li>
-                      <li>Click "Download" button</li>
-                      <li>Select "GPX" format</li>
-                      <li>Save the file</li>
-                    </ol>
-
-                    <p style={{ marginTop: '20px', fontStyle: 'italic', color: '#999' }}>
-                      <strong>Can't find your app?</strong> Most fitness and GPS tracking apps support GPX export.
-                      Look for "Export", "Share", or "Download" options in your activity details, or check the
-                      app's help documentation.
-                    </p>
-                  </div>
-
-                  {/* Tips & Tricks */}
-                  <div className="help-section">
-                    <h2>Tips & Tricks</h2>
-                    <ul>
-                      <li><strong>Best video quality:</strong> Use "High" or "Ultra" quality preset and 1080p or 4K resolution</li>
-                      <li><strong>Smooth animation:</strong> Set FPS to 30 or 60 for fluid motion</li>
-                      <li><strong>Quick exports:</strong> Disable "Zoom to Track" and use lower resolutions (720p)</li>
-                      <li><strong>Compare routes:</strong> Upload multiple GPX files and use "Simultaneous" mode to see how they align</li>
-                      <li><strong>Custom labels:</strong> Give your tracks meaningful names like "Morning Run" or "Weekend Ride"</li>
-                      <li><strong>Perfect timing:</strong> Adjust video duration (5-300 seconds) to match your desired pacing</li>
-                    </ul>
-                  </div>
-
-                </div>
-              </div>
-            </div>
-          )}
         </>
       );
     }
