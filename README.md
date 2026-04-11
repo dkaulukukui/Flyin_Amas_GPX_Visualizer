@@ -3,20 +3,53 @@
 A beautiful, interactive web application for visualizing and animating GPS tracks from GPX files. Perfect for showcasing Strava activities, outdoor adventures, or any GPS-recorded journey.
 
 ![GPX Track Animator](https://img.shields.io/badge/Status-Active-success)
+![Version](https://img.shields.io/badge/Version-2.1.5-blue)
 ![License](https://img.shields.io/badge/License-MIT-blue)
+
+> **⚠️ Disclaimer:** This code was generated with AI assistance. While thoroughly tested, users should review and verify the code before use in production environments.
+
+## What's New in v2.1.5
+
+📚 **New Help & Documentation** - Comprehensive in-app help guide!
+
+- ❓ **Help Modal**: Click the Help button for detailed usage instructions
+- 📱 **GPX Export Guides**: Step-by-step instructions for Strava, Garmin, Paddle Logger, and 10+ other fitness apps
+- ❔ **FAQ Section**: Common questions answered (What is GPX? Video formats? Privacy?)
+- 💡 **Tips & Tricks**: Best practices for quality, performance, and features
+
+## Previous Updates (v2.1.x)
+
+🎉 **Major Video Export Overhaul** - Videos now export at **exactly** the specified FPS and duration!
+
+- ✨ **Two-Phase Export System**: Pre-renders frames, then plays back at precise intervals
+- ✅ **Accurate FPS**: Videos now play at exactly 30 FPS (or your chosen frame rate)
+- ✅ **Accurate Duration**: 60-second setting = exactly 60 seconds of video
+- 🎨 **Full Track Preview**: Toggle dimmed preview of complete track path
+- 📍 **Position Markers**: White-rimmed circles show current position
+- 🗺️ **Map Tiles Included**: Satellite imagery now appears in exported videos
+- ⚙️ **Customizable Settings**: Control duration (5-300s), FPS (15-60), quality, and resolution
+- 📱 **iOS Detection**: Graceful handling with screen recording instructions
 
 ## Features
 
 - **📁 Upload Multiple GPX Files** - Drag and drop or browse to add tracks
-- **🗺️ Satellite Map View** - High-quality satellite imagery background
+- **🗺️ Satellite Map View** - High-quality satellite imagery background with map tiles included in exports
 - **🎬 Simultaneous & Sequential Animation** - Play tracks together or one after another
 - **⏱️ Time-Synchronized Playback** - Tracks play according to actual timestamps
 - **🎨 Customizable Track Colors** - Choose colors for each track
 - **🏷️ Track Labels** - Add and edit labels for your tracks
+- **👁️ Full Track Preview** - Toggle dimmed preview showing complete track path
+- **📍 Position Markers** - White-rimmed circles showing current position on each track
 - **📊 Legend Display** - Toggle legend showing all loaded tracks
-- **🎥 Video Export** - Export animations as WebM video files
+- **🎥 Advanced Video Export** - Export high-quality videos with precise control:
+  - **Duration Control**: 5-300 seconds (default: 60s)
+  - **Frame Rate Control**: 15-60 FPS (default: 30 FPS)
+  - **Quality Presets**: Low, Medium, High, Ultra
+  - **Multiple Resolutions**: 720p to 4K in 16:9 or 4:3
+  - **Custom Video Title**: Add text overlay with positioning and styling options
+  - **Multiple Formats**: MP4, WebM (VP9), or WebM (VP8) depending on browser
 - **⚡ Speed Control** - Adjust playback speed from 0.1x to 5x
-- **🔍 Zoom to Track** - Follow the action with adjustable zoom level
+- **🔍 Zoom to Track** - Follow the action with adjustable zoom level (12-18)
 - **📈 Statistics** - View total distance, points, and time ranges
 
 ## Live Demo
@@ -41,16 +74,43 @@ Visit: [https://dkaulukukui.github.io/Flyin_Amas_GPX_Visualizer/](https://dkaulu
 
 ### Video Export
 
-Click "Export Video" to record your animation. The video will:
-- Capture the animated tracks and markers on a dark background
-- Save as WebM format (widely supported)
-- Can be converted to MP4 using VLC or HandBrake if needed
+The application uses a sophisticated two-phase export system to ensure perfect video quality:
 
-**Note:** Due to browser security (CORS), the background map tiles are not included in exports. For videos with the full map background, use screen recording tools like:
-- **Chrome/Edge**: Built-in screen recorder (Extensions → Screen Recorder)
-- **OBS Studio**: Free, powerful screen recording
-- **macOS**: QuickTime Player (File → New Screen Recording)
-- **Windows**: Xbox Game Bar (Win + G)
+**How It Works:**
+1. **Phase 1 - Pre-Rendering** (takes a few minutes): Renders all frames with fully loaded map tiles and stores them in memory
+2. **Phase 2 - Playback** (real-time): Plays back pre-rendered frames at precise intervals to ensure correct FPS and duration
+
+**Export Settings:**
+- **Duration**: Set video length from 5 to 300 seconds (default: 60s)
+- **Frame Rate**: Choose FPS from 15 to 60 (default: 30 FPS for smooth motion)
+- **Quality**: Select from Low, Medium, High, or Ultra presets
+- **Resolution**: Multiple options from 720p to 4K in 16:9 or 4:3 aspect ratios
+- **Video Title**: Add custom text overlay with positioning and styling
+- **Format**: Automatically selects best format (MP4, WebM VP9, or WebM VP8) based on browser support
+
+**What's Included in Exported Videos:**
+- ✅ Satellite map background (full tiles)
+- ✅ Animated track paths with full preview (if enabled)
+- ✅ Position markers (white-rimmed circles)
+- ✅ Track labels
+- ✅ Legend (if enabled)
+- ✅ Custom video title (if configured)
+
+**Performance Tips:**
+- Longer durations and higher resolutions take more time and memory
+- Disable "Zoom to Track" to speed up Phase 1 rendering
+- For quick tests, use shorter durations (10-20s) and lower resolutions (720p)
+- Close other browser tabs to free up memory for large exports
+
+**iOS/Mobile Limitations:**
+- ⚠️ **Video export is not available on iOS devices** (iPhone, iPad)
+- iOS Safari does not support the MediaRecorder API required for video export
+- **iOS Users:** Use the built-in Screen Recording feature instead:
+  1. Open Control Center (swipe down from top-right on newer devices, or up from bottom on older ones)
+  2. Tap the Screen Recording button (circle icon)
+  3. Start your animation playback in the browser
+  4. Recording automatically saves to your Photos app
+- **Alternative:** Use a desktop browser (Chrome, Firefox, or Safari on Mac) for full video export features
 
 ## Deployment
 
@@ -72,7 +132,7 @@ Click "Export Video" to record your animation. The video will:
 
 ### Local Development
 
-Simply open `index.html` in a web browser, or run a local server:
+**Important:** You must run a local server (not open `index.html` directly) for map tiles to work correctly due to CORS requirements.
 
 ```bash
 # Python
@@ -84,13 +144,17 @@ npx http-server
 # Then open http://localhost:8000
 ```
 
+**Note:** Opening `index.html` directly as `file://` will block map tiles due to CORS security restrictions.
+
 ## Technology Stack
 
 - **React 18** - UI framework (loaded via CDN)
-- **Leaflet 1.9.4** - Interactive maps
-- **ArcGIS Satellite Tiles** - High-quality imagery
-- **MediaRecorder API** - Video export
-- **Pure JavaScript** - No build tools required
+- **Leaflet 1.9.4** - Interactive maps with canvas rendering
+- **ArcGIS Satellite Tiles** - High-quality imagery with CORS support
+- **MediaRecorder API** - Browser-native video encoding
+- **Canvas API** - Frame-by-frame video rendering with precise timing
+- **Two-Phase Export System** - Pre-render frames, then playback at exact FPS
+- **Pure JavaScript** - No build tools or compilation required
 
 ## File Structure
 
@@ -103,9 +167,14 @@ npx http-server
 
 ## Browser Support
 
-- **Chrome/Edge** (recommended) - Full feature support
-- **Firefox** - Full feature support
-- **Safari** - Full feature support (WebM may require conversion)
+### Desktop
+- **Chrome/Edge** (recommended) - Full feature support including video export
+- **Firefox** - Full feature support including video export
+- **Safari (macOS)** - Full feature support (WebM format for video export)
+
+### Mobile
+- **iOS (iPhone/iPad)** - ⚠️ Animation and viewing work perfectly, but **video export is not supported** due to iOS Safari limitations. Use iOS Screen Recording instead.
+- **Android** - Animation works, video export may work depending on browser (Chrome recommended)
 
 ## Privacy
 
@@ -125,6 +194,8 @@ MIT License - feel free to use and modify for your own projects.
 ## Credits
 
 Built with ❤️ for the GPS tracking community.
+
+**Development:** This project was developed with AI assistance using Claude Code. The codebase is AI-generated and has been tested for functionality, but users are encouraged to review the code before deployment.
 
 ## Support
 

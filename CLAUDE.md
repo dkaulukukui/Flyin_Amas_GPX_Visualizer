@@ -19,15 +19,16 @@ The entire application is contained in `index.html` with this organization:
    - Embedded CSS styles for entire application
    - All styles use consistent color scheme: `#fc4c02` (primary orange), `#2d2d2d` (dark backgrounds)
 
-2. **React Application** (lines 528-1680)
+2. **React Application** (lines ~528-2500+)
    - Single root component: `GPXTrackAnimator`
    - Uses React hooks exclusively (no class components)
    - JSX transpiled in-browser using Babel Standalone
 
-3. **Version Management** (lines 531-536)
-   - `APP_VERSION` constant with changelog comments
+3. **Version Management** (lines ~786-840)
+   - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
+   - Current version: 2.1.4 (as of last update)
 
 ### Key Technical Patterns
 
@@ -63,49 +64,78 @@ Two animation modes with different timestamp handling:
 - Synchronizes tracks by absolute GPS timestamps
 - Calculates earliest start and latest end across all tracks
 - Progress maps to absolute time span, showing tracks at their actual time
-- Implementation: `index.html:789-859`
 
 **Sequential Mode**:
 - Plays tracks one after another in upload order
 - Each track uses full 0-100% progress range
-- Implementation: `index.html:861-876`
 
 **Animation Loop**:
 - Uses `requestAnimationFrame` for smooth rendering
 - Delta-time based progress: `progressIncrement = (deltaTime / 100) * speed`
 - Controlled by `isPlayingRef` to avoid stale closure issues
-- Implementation: `index.html:695-764`
+
+**Visual Elements**:
+- Full track preview (dimmed, togglable): Shows complete path at 30% opacity
+- Animated track: Current progress shown at full opacity
+- Position markers: White-rimmed circles at current position
+- Track labels: Customizable labels that follow track position
 
 #### Video Export Architecture
 
-**CRITICAL DESIGN**: Frame-by-frame rendering system (not real-time capture)
+**CRITICAL DESIGN**: Two-phase export system (v2.1.x)
+
+**Platform Limitations**:
+- **iOS Detection** (v2.1.4): Export blocked on iOS devices (iPhone/iPad) due to MediaRecorder API limitations
+- Detection checks: `navigator.userAgent` for iOS devices and `navigator.platform === 'MacIntel'` with touch points for iPad
+- iOS users shown instructions for screen recording instead
+- Desktop browsers fully supported
 
 **Why this approach**:
-- Map tiles load asynchronously and may not be ready during live playback
-- Real-time capture creates choppy videos with missing tiles
-- Frame-by-frame ensures every frame has fully loaded tiles before capture
+- Map tiles load asynchronously and may not be ready during real-time capture
+- Tile loading delays (100-1500ms) prevent consistent frame capture
+- MediaRecorder requires frames at precise intervals for correct FPS/duration
+- Two-phase approach separates rendering from timing
 
-**Rendering Process** (`index.html:1147-1285`):
+**Phase 1: Pre-Rendering** (takes several minutes):
 1. Create offscreen canvas with user-selected resolution (16:9 or 4:3)
-2. Setup MediaRecorder with 30 FPS stream from canvas
-3. Loop through 300 frames (10-second video):
+2. Calculate total frames: `duration × FPS` (e.g., 60s × 30fps = 1800 frames)
+3. Loop through all frames sequentially:
    - Set progress value (triggers React re-render)
-   - Wait for tiles to load using `waitForTilesToLoad()`
-   - Draw composite frame: tiles → canvases → labels → legend
-   - Capture to MediaRecorder stream
-   - Small delay for stream capture
-4. Stop recorder, download WebM blob
+   - Apply zoom-to-track if enabled
+   - Wait for tiles to load using `waitForTilesToLoad()` (100-1500ms per zoom change)
+   - Draw composite frame: tiles → tracks → markers → labels → legend
+   - Store frame as `ImageData` in memory array
+4. Progress bar shows pre-render progress (0-100%)
+5. **MediaRecorder is NOT started yet**
 
-**Tile Loading Optimization** (`index.html:999-1025`):
-- First checks if all tiles already loaded (fast path: 16ms)
-- Only waits (max 500ms) if tiles still loading
-- Critical for smooth 30 FPS frame rate
+**Phase 2: Playback** (real-time, exactly equals video duration):
+1. Start MediaRecorder with `captureStream(targetFPS)`
+2. Loop through pre-rendered frames at precise intervals:
+   - Calculate target time: `startTime + (frameIndex × frameDuration)`
+   - Draw pre-rendered `ImageData` to canvas
+   - Wait until exact target time
+   - Stream auto-captures at specified FPS
+3. After all frames played back, stop MediaRecorder
+4. Download video blob (WebM, MP4, or WebM VP8 depending on browser)
 
-**Composite Frame Drawing** (`index.html:1027-1076`):
-- Canvas scaled to match export resolution
-- Draws in order: map tiles → track canvases → labels → legend
-- Uses canvas transforms for scaling and centering
-- Try-catch around tile drawing for CORS failures
+**Frame Capture Function** (`captureFrame`):
+- Draws composite frame to offscreen canvas
+- Layer order: map tiles → direct track rendering → labels → legend → video title
+- Direct track rendering bypasses Leaflet for reliability
+- Includes full track preview (dimmed) if `showAllTracks` enabled
+- Draws position markers (white-rimmed circles) at current position
+
+**Direct Track Rendering** (`drawTracksDirect`):
+- Bypasses Leaflet canvas renderer for reliability (iOS/Safari fix)
+- Converts lat/lon to pixel coordinates using map bounds
+- Draws tracks, markers, and previews directly to canvas
+- Ensures all visual elements appear in exported video
+
+**Tile Loading Optimization** (`waitForTilesToLoad`):
+- Smart detection: only waits when zoom changes
+- Fast path if tiles already loaded (16ms check)
+- Max wait time: 1500ms for new tiles after zoom
+- No wait needed if zoom unchanged (just `requestAnimationFrame`)
 
 #### State Management
 
@@ -119,6 +149,11 @@ All state managed through React useState/useRef hooks:
 - `animationStyle`: 'simultaneous' or 'sequential'
 - `zoomToTrack`, `zoomLevel`: Zoom controls
 - `exportAspectRatio`, `exportResolution`: Export settings
+- `exportDuration`: Video duration in seconds (5-300s, default 60s)
+- `exportFPS`: Target frame rate (15-60 FPS, default 30 FPS)
+- `exportQuality`: Video quality preset ('low', 'medium', 'high', 'ultra')
+- `exportFormat`: Current export format ('MP4', 'WebM (VP9)', 'WebM (VP8)')
+- `videoTitle`, `titlePosition`, `titleSize`, `titleFont`, `titleColor`: Video title customization
 
 **Refs** (useRef):
 - `mapInstanceRef`: Leaflet map instance
@@ -143,9 +178,9 @@ npx http-server
 
 ### Making Changes
 
-1. **Update version number** in `APP_VERSION` (line 536)
-2. **Add changelog entry** in comments above version
-3. Test locally with `python -m http.server`
+1. **Update version number** in `APP_VERSION` (around line 839)
+2. **Add changelog entry** in comments above version (around line 787-794)
+3. Test locally with `python -m http.server 8000`
 4. Commit and push to GitHub (auto-deploys to GitHub Pages)
 
 ### Git Workflow
@@ -161,21 +196,27 @@ git push origin master
 ## Common Modifications
 
 ### Changing Map Tiles
-Edit tile layer URLs at `index.html:555-576`:
+Edit tile layer URLs (search for "ArcGIS" or "openstreetmap"):
 - Satellite layer: ArcGIS World Imagery
 - Backup layer: OpenStreetMap
 - **Must include** `crossOrigin: 'anonymous'` for video export
 
 ### Adjusting Animation
-- Default speed range: `0.1` to `5.0` (lines 1411-1413)
-- Speed slider step: `0.1` (line 1412)
-- Zoom levels: `12` to `18` (lines 1473-1475)
+- Default speed range: `0.1` to `5.0`
+- Speed slider step: `0.1`
+- Zoom levels: `12` to `18`
 
 ### Video Export Settings
-- Target FPS: `30` (line 1189)
-- Total frames: `300` (10 seconds, line 1256)
-- Tile wait timeout: `500ms` (line 1000)
-- Resolution presets: lines 1514-1524
+User-configurable via UI:
+- **Duration**: 5-300 seconds (default: 60s)
+- **FPS**: 15-60 FPS (default: 30 FPS)
+- **Quality**: Low, Medium, High, Ultra (affects bitrate)
+- **Resolution**: Multiple 16:9 and 4:3 presets (720p to 4K)
+- **Aspect Ratio**: 16:9 or 4:3
+
+Hardcoded timing values:
+- Tile wait after zoom: 100ms + 1500ms max for tile loading
+- Frame interval: `1000 / targetFPS` milliseconds
 
 ### Color Scheme
 Primary brand color `#fc4c02` used for:
@@ -190,38 +231,68 @@ Primary brand color `#fc4c02` used for:
 - Canvas becomes "tainted" if non-CORS images drawn
 
 ### Browser Compatibility
-- Requires `MediaRecorder` API (Chrome, Firefox, Edge)
-- Safari may have WebM codec issues
+**Desktop:**
+- Requires `MediaRecorder` API (Chrome, Firefox, Edge, Safari on macOS)
+- Safari may have WebM codec issues (no MP4 support)
 - Canvas `captureStream()` required for video export
+
+**Mobile:**
+- **iOS**: Animation works, but video export **NOT supported** (MediaRecorder API unavailable)
+- iOS detection added in v2.1.4 - shows screen recording instructions instead
+- **Android**: May work depending on browser, not extensively tested
 
 ### Performance Considerations
 - Large GPX files (>10,000 points) may slow animation
-- Video export is CPU-intensive (renders 300+ frames)
-- Rendering overlay hides map to improve performance during export
+- Video export is CPU and memory intensive:
+  - Phase 1 pre-renders all frames (e.g., 1800 frames for 60s @ 30fps)
+  - Each frame stored as ImageData in memory (can be several GB for 4K videos)
+  - Phase 2 playback runs in real-time (60s video = 60s playback)
+- Longer durations and higher resolutions increase export time significantly
+- Rendering overlay hides map during Phase 1 to improve performance
 
 ## Debugging
 
 ### Common Issues
+
+**Video export not working on iOS**:
+- This is expected behavior as of v2.1.4
+- iOS Safari does not support MediaRecorder API
+- Alert message automatically shown to iOS users with screen recording instructions
+- No code fix possible - platform limitation
+- Users should use iOS Screen Recording or switch to desktop browser
+
+**Video has wrong FPS or duration**:
+- Check console logs for "Phase 1 complete" and "Phase 2: Playing back"
+- Verify MediaRecorder only starts during Phase 2 (look for "🔴 Recording started")
+- Ensure Phase 2 playback completes (should take exactly the video duration)
+- Check browser console for "Video Metadata Inspection" - should show correct FPS/duration
 
 **Video export produces 1KB corrupted file**:
 - Canvas is CORS-tainted from non-CORS images
 - Check tile server supports `crossOrigin: 'anonymous'`
 - Verify browser console for CORS errors
 
-**Animation not smooth**:
+**Tracks or markers not showing in video**:
+- Check console for "⚠️ Warning: Found X canvases but none had content"
+- This triggers fallback to direct track rendering (`drawTracksDirect`)
+- Verify tracks have valid lat/lon coordinates
+- Check if `showAllTracks` toggle affects visibility
+
+**Animation not smooth in browser**:
 - Check `isPlayingRef` synced with `isPlaying` state
 - Verify `requestAnimationFrame` loop not cancelled
 - Test with single track to isolate performance
 
-**Tiles not loading in video**:
-- Increase `maxWaitTime` in `waitForTilesToLoad()` (line 1000)
-- Check network tab for tile 404s or timeouts
-- Verify tile URLs are correct for current map view
+**Export Phase 1 too slow**:
+- Each frame waits for tiles when zoom changes (100ms + 1500ms max)
+- Disable "Zoom to Track" to speed up export (no zoom changes = no tile waits)
+- Consider lower FPS or shorter duration for faster exports
 
-**Export works once then fails**:
-- Ensure all refs/state properly reset in `stopRecording()` (lines 1295-1310)
-- Check MediaRecorder stream tracks are stopped
-- Verify canvas cleanup in `recorder.onstop` handler
+**Out of memory during export**:
+- Reduce resolution (4K uses ~4x memory vs 1080p)
+- Reduce duration (60s = 1800 frames @ 30fps, 300s = 9000 frames)
+- Each frame stored as ImageData in memory during Phase 1
+- Close other tabs/applications to free up RAM
 
 ## Deployment
 
@@ -233,3 +304,27 @@ Primary brand color `#fc4c02` used for:
 **Alternatives**: Netlify, Cloudflare Pages, Vercel (any static host)
 
 No build process required - single HTML file is the entire app.
+
+## Version History & Key Milestones
+
+**Current Version: 2.1.4**
+
+### Major Achievements (v2.1.x)
+- ✅ **Solved FPS Problem**: Videos now export at exactly the specified FPS and duration
+- ✅ **Two-Phase Export**: Pre-rendering phase + playback phase ensures quality and timing
+- ✅ **Visual Completeness**: Position markers, full track preview, map tiles all included
+- ✅ **Browser Playback Match**: Export output matches browser preview exactly
+- ✅ **iOS Compatibility Handling**: Gracefully blocks iOS export with helpful instructions
+
+### Technical Journey
+- **v1.x**: Initial implementation, struggled with FPS accuracy
+- **v1.9.x**: Multiple failed attempts using manual `requestFrame()` timing
+- **v2.0.0**: Attempted real-time capture (failed due to tile loading speed)
+- **v2.1.0**: Breakthrough with two-phase export system
+- **v2.1.1**: Critical fix - start recording only during Phase 2
+- **v2.1.2**: Added position markers and full track preview to exports
+- **v2.1.3**: Fixed `showAllTracks` toggle to work in browser playback
+- **v2.1.4**: Added iOS detection to prevent export failures and guide users to screen recording
+
+### Key Learning
+The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS. The two-phase approach decouples slow tile loading (Phase 1) from precise timing requirements (Phase 2), solving the fundamental problem that plagued earlier versions.
