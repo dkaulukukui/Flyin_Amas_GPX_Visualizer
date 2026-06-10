@@ -3,19 +3,21 @@
 A beautiful, interactive web application for visualizing and animating GPS tracks from GPX files. Perfect for showcasing Strava activities, outdoor adventures, or any GPS-recorded journey.
 
 ![GPX Track Animator](https://img.shields.io/badge/Status-Active-success)
-![Version](https://img.shields.io/badge/Version-2.1.5-blue)
+![Version](https://img.shields.io/badge/Version-2.4.0-blue)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
 > **⚠️ Disclaimer:** This code was generated with AI assistance. While thoroughly tested, users should review and verify the code before use in production environments.
 
-## What's New in v2.1.5
+## What's New in v2.4.0
 
-📚 **New Help & Documentation** - Comprehensive in-app help guide!
+🎬 **MP4 Export Everywhere + Major Stability Overhaul**
 
-- ❓ **Help Modal**: Click the Help button for detailed usage instructions
-- 📱 **GPX Export Guides**: Step-by-step instructions for Strava, Garmin, Paddle Logger, and 10+ other fitness apps
-- ❔ **FAQ Section**: Common questions answered (What is GPX? Video formats? Privacy?)
-- 💡 **Tips & Tricks**: Best practices for quality, performance, and features
+- 📹 **True MP4 (H.264) Export**: Videos now export as MP4 on Chrome, Edge, Firefox 130+, and Safari 16.4+ — including **iPhone, iPad, and Android**
+- 🧠 **No More Out-of-Memory Crashes**: New WebCodecs single-pass export encodes each frame straight into the video — no frames are stored in RAM
+- ⏱️ **Exact FPS & Duration**: Frames carry explicit timestamps, so the video is always exactly the configured length
+- 🏃 **Preview Matches Export**: The in-browser preview now plays at exactly the same speed as the exported video
+- 🔒 **Security Hardening**: Track labels are sanitized (XSS fix), GPX files are validated, and uploads are capped at 50 MB
+- 🛟 **Smart Fallback**: Older browsers fall back to the previous MediaRecorder export, now using ~30x less memory
 
 ## Previous Updates (v2.1.x)
 
@@ -77,8 +79,8 @@ Visit: [https://dkaulukukui.github.io/Flyin_Amas_GPX_Visualizer/](https://dkaulu
 The application uses a sophisticated two-phase export system to ensure perfect video quality:
 
 **How It Works:**
-1. **Phase 1 - Pre-Rendering** (takes a few minutes): Renders all frames with fully loaded map tiles and stores them in memory
-2. **Phase 2 - Playback** (real-time): Plays back pre-rendered frames at precise intervals to ensure correct FPS and duration
+- **Modern browsers (preferred path)**: Each frame is rendered with fully loaded map tiles, then encoded straight into an in-memory MP4 using the WebCodecs API. Frames carry explicit timestamps, so the FPS and duration are exact, and no frames need to be stored in RAM.
+- **Older browsers (fallback)**: A two-phase MediaRecorder export — frames are pre-rendered and stored compressed, then played back at precise intervals while recording (WebM output).
 
 **Export Settings:**
 - **Duration**: Set video length from 5 to 300 seconds (default: 60s)
@@ -86,7 +88,7 @@ The application uses a sophisticated two-phase export system to ensure perfect v
 - **Quality**: Select from Low, Medium, High, or Ultra presets
 - **Resolution**: Multiple options from 720p to 4K in 16:9 or 4:3 aspect ratios
 - **Video Title**: Add custom text overlay with positioning and styling
-- **Format**: Automatically selects best format (MP4, WebM VP9, or WebM VP8) based on browser support
+- **Format**: MP4 (H.264) on modern browsers; WebM (VP9/VP8) fallback on older browsers
 
 **What's Included in Exported Videos:**
 - ✅ Satellite map background (full tiles)
@@ -97,20 +99,18 @@ The application uses a sophisticated two-phase export system to ensure perfect v
 - ✅ Custom video title (if configured)
 
 **Performance Tips:**
-- Longer durations and higher resolutions take more time and memory
-- Disable "Zoom to Track" to speed up Phase 1 rendering
+- Longer durations and higher resolutions take more time
+- Disable "Zoom to Track" to speed up rendering (no per-frame tile loading)
 - For quick tests, use shorter durations (10-20s) and lower resolutions (720p)
-- Close other browser tabs to free up memory for large exports
 
-**iOS/Mobile Limitations:**
-- ⚠️ **Video export is not available on iOS devices** (iPhone, iPad)
-- iOS Safari does not support the MediaRecorder API required for video export
-- **iOS Users:** Use the built-in Screen Recording feature instead:
+**iOS/Mobile:**
+- ✅ **iOS 16.4+ (iPhone, iPad)**: Video export works and produces MP4 (via WebCodecs)
+- ✅ **Android**: Video export works in modern browsers (Chrome recommended), producing MP4
+- ⚠️ **Older iOS versions**: Use the built-in Screen Recording feature instead:
   1. Open Control Center (swipe down from top-right on newer devices, or up from bottom on older ones)
   2. Tap the Screen Recording button (circle icon)
   3. Start your animation playback in the browser
   4. Recording automatically saves to your Photos app
-- **Alternative:** Use a desktop browser (Chrome, Firefox, or Safari on Mac) for full video export features
 
 ## Deployment
 
@@ -151,9 +151,9 @@ npx http-server
 - **React 18** - UI framework (loaded via CDN)
 - **Leaflet 1.9.4** - Interactive maps with canvas rendering
 - **ArcGIS Satellite Tiles** - High-quality imagery with CORS support
-- **MediaRecorder API** - Browser-native video encoding
+- **WebCodecs API + mp4-muxer** - Hardware-accelerated H.264 encoding into MP4 (preferred export path)
+- **MediaRecorder API** - Browser-native video encoding (fallback export path, WebM)
 - **Canvas API** - Frame-by-frame video rendering with precise timing
-- **Two-Phase Export System** - Pre-render frames, then playback at exact FPS
 - **Pure JavaScript** - No build tools or compilation required
 
 ## File Structure
@@ -168,13 +168,13 @@ npx http-server
 ## Browser Support
 
 ### Desktop
-- **Chrome/Edge** (recommended) - Full feature support including video export
-- **Firefox** - Full feature support including video export
-- **Safari (macOS)** - Full feature support (WebM format for video export)
+- **Chrome/Edge** (recommended) - Full feature support, MP4 video export
+- **Firefox** - Full feature support; MP4 export on Firefox 130+, WebM on older versions
+- **Safari 16.4+ (macOS)** - Full feature support, MP4 video export
 
 ### Mobile
-- **iOS (iPhone/iPad)** - ⚠️ Animation and viewing work perfectly, but **video export is not supported** due to iOS Safari limitations. Use iOS Screen Recording instead.
-- **Android** - Animation works, video export may work depending on browser (Chrome recommended)
+- **iOS (iPhone/iPad)** - Animation and viewing work perfectly; **MP4 video export works on iOS 16.4+**. Older iOS versions can use iOS Screen Recording instead.
+- **Android** - Animation and MP4 video export work in modern browsers (Chrome recommended)
 
 ## Privacy
 

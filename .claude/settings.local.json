@@ -2,7 +2,32 @@
   "permissions": {
     "allow": [
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git -C /mnt/c/Users/donal/Documents/VSCODE_repos/Flyin_Amas_GPX_Visializer status)",
+      "Bash(git -C /mnt/c/Users/donal/Documents/VSCODE_repos/Flyin_Amas_GPX_Visializer diff --stat)",
+      "Bash(git rev-list *)",
+      "Bash(curl -s --max-time 15 \"https://data.jsdelivr.com/v1/packages/npm/mp4-muxer\")",
+      "Bash(curl -s --max-time 15 \"https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js\" -o /tmp/mp4muxer.js -w \"%{http_code} %{size_download}\\\\n\")",
+      "Read(//tmp/**)",
+      "Bash(awk '/<script type=\"text\\\\/babel\">/{flag=1;next}/<\\\\/script>/{if\\(flag\\){flag=0}}flag' /mnt/c/Users/donal/Documents/VSCODE_repos/Flyin_Amas_GPX_Visializer/index.html)",
+      "Bash(npx -y esbuild /tmp/app.jsx --loader=jsx --outfile=/dev/null)",
+      "Bash(npx -y esbuild /tmp/app.jsx --outfile=/dev/null)",
+      "Bash(awk -F: '$1 > 3000')",
+      "Bash(awk '/<script type=\"text\\\\/babel\">/{flag=1;next}/<\\\\/script>/{if\\(flag\\){flag=0}}flag' index.html)",
+      "Bash(node -e \"try{require.resolve\\('playwright'\\);console.log\\('playwright installed'\\)}catch\\(e\\){console.log\\('no playwright'\\)}\")",
+      "Bash(mkdir -p /tmp/gpxtest)",
+      "Bash(npm init *)",
+      "Bash(npm i *)",
+      "Bash(npx playwright *)",
+      "Bash(node smoke.js)",
+      "Bash(sudo -n apt-get install -y libnspr4 libnss3 libasound2t64)",
+      "Bash(sudo -n true)",
+      "Bash(ldd /home/dkaulukukui/.cache/ms-playwright/chromium_headless_shell-1223/chrome-headless-shell-linux64/chrome-headless-shell)",
+      "Bash(awk '{print $1}')",
+      "Bash(LD_LIBRARY_PATH=/tmp/chromelibs/extracted/usr/lib/x86_64-linux-gnu node smoke.js)",
+      "Read(//usr/bin/**)",
+      "Bash(python3 -c \"import struct; print\\('py ok'\\)\")",
+      "Bash(LD_LIBRARY_PATH=/tmp/chromelibs/extracted/usr/lib/x86_64-linux-gnu node fallback.js)"
     ],
     "deny": [],
     "ask": []
