@@ -14,28 +14,31 @@ Flyin Amas GPX Track Animator is a **single-file web application** (`index.html`
 
 The entire application is contained in `index.html` with this organization:
 
-1. **HTML Head** (lines 1-524)
-   - External dependencies via CDN (React 18, Leaflet 1.9.4, Babel Standalone)
+1. **HTML Head**
+   - External dependencies via CDN (React 18, Leaflet 1.9.4, Babel Standalone, FFmpeg.wasm, mp4-muxer)
    - Embedded CSS styles for entire application
    - All styles use consistent color scheme: `#fc4c02` (primary orange), `#2d2d2d` (dark backgrounds)
 
-2. **React Application** (lines ~528-2500+)
+2. **React Application**
    - Single root component: `GPXTrackAnimator`
    - Uses React hooks exclusively (no class components)
    - JSX transpiled in-browser using Babel Standalone
 
-3. **Version Management** (lines ~786-840)
+3. **Version Management**
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 2.1.4 (as of last update)
+   - Current version: 2.4.0 (as of last update)
 
 ### Key Technical Patterns
 
 #### GPX File Processing
-- Files uploaded via drag-and-drop or file input
-- XML parsing extracts `<trkpt>` elements with `lat`, `lon`, optional `time` attributes
-- Each track assigned unique ID, random color, default label from filename
+- Files uploaded via drag-and-drop or file input (50 MB size cap per file)
+- XML parsing via DOMParser; malformed XML is rejected (`parsererror` check)
+- Extracts `<trkpt>` elements with `lat`, `lon`, optional `time` attributes
+- Points with missing/non-numeric/out-of-range coordinates are skipped; invalid timestamps are ignored
+- Each track assigned unique ID, random color, default label from filename (part before first underscore)
+- **Security**: track labels are HTML-escaped via `escapeHtml()` before being injected into Leaflet divIcon HTML (XSS prevention)
 - Tracks stored in React state as array of objects with structure:
   ```javascript
   {
@@ -53,6 +56,7 @@ The entire application is contained in `index.html` with this organization:
 - Map initialized with `preferCanvas: true` for better video export
 - **Satellite tiles**: ArcGIS World Imagery with `crossOrigin: 'anonymous'` for CORS
 - **Backup tiles**: OpenStreetMap as fallback layer
+- Initial map center configurable via `INITIAL_MAP_CENTER` (default: Oahu, Hawaii)
 - Polylines drawn using Leaflet canvas renderer
 - Labels positioned at current track positions using custom DOM markers (`.map-label`)
 - Legend rendered as absolute-positioned overlay (`.map-legend`)
@@ -71,7 +75,9 @@ Two animation modes with different timestamp handling:
 
 **Animation Loop**:
 - Uses `requestAnimationFrame` for smooth rendering
-- Delta-time based progress: `progressIncrement = (deltaTime / 100) * speed`
+- **Preview pacing matches export exactly**: `progressIncrement = (deltaTime / (exportDuration * 1000)) * 100`
+- `exportDuration` is computed from playback speed: `clamp(60 / speed, 10, 60)` seconds
+  (60s at 1x, 30s at 2x, 12s at 5x; speeds below 1x are capped by the 60s max)
 - Controlled by `isPlayingRef` to avoid stale closure issues
 
 **Visual Elements**:
@@ -79,63 +85,51 @@ Two animation modes with different timestamp handling:
 - Animated track: Current progress shown at full opacity
 - Position markers: White-rimmed circles at current position
 - Track labels: Customizable labels that follow track position
+- Centered track: optional single track to follow during zoom animation (`centeredTrackId`)
 
 #### Video Export Architecture
 
-**CRITICAL DESIGN**: Two-phase export system (v2.1.x)
+**CRITICAL DESIGN (v2.4.0)**: Two export paths, chosen automatically at export time.
 
-**Platform Limitations**:
-- **iOS Detection** (v2.1.4): Export blocked on iOS devices (iPhone/iPad) due to MediaRecorder API limitations
-- Detection checks: `navigator.userAgent` for iOS devices and `navigator.platform === 'MacIntel'` with touch points for iPad
-- iOS users shown instructions for screen recording instead
-- Desktop browsers fully supported
+**Preferred path — WebCodecs single-pass MP4 export** (`exportWithWebCodecs`):
+1. `pickAvcEncoderConfig()` probes `VideoEncoder.isConfigSupported` with H.264 codec candidates
+   (High 5.2 down to Baseline 3.0) — returns null if WebCodecs or the `Mp4Muxer` global is unavailable
+2. Creates an `mp4-muxer` Muxer with an in-memory `ArrayBufferTarget` (`fastStart: 'in-memory'`)
+3. For each frame: `renderExportFrame()` renders to the composite canvas, then a `VideoFrame` with an
+   **explicit timestamp** (`frame * 1e6/fps` microseconds) is encoded and closed immediately
+4. Backpressure: waits while `encoder.encodeQueueSize > 4` so frames never pile up in RAM
+5. `encoder.flush()` → `muxer.finalize()` → download MP4 blob
 
-**Why this approach**:
-- Map tiles load asynchronously and may not be ready during real-time capture
-- Tile loading delays (100-1500ms) prevent consistent frame capture
-- MediaRecorder requires frames at precise intervals for correct FPS/duration
-- Two-phase approach separates rendering from timing
+Why this is the preferred path:
+- **No RAM accumulation**: frames go straight into the encoder (fixes out-of-memory crashes)
+- **Exact FPS/duration**: explicit timestamps mean render speed doesn't affect video timing
+- **MP4 output everywhere supported**: Chrome/Edge 94+, Firefox 130+, Safari 16.4+ (including iOS), Android Chrome
+- **Faster**: single pass; no real-time playback phase
 
-**Phase 1: Pre-Rendering** (takes several minutes):
-1. Create offscreen canvas with user-selected resolution (16:9 or 4:3)
-2. Calculate total frames: `duration × FPS` (e.g., 60s × 30fps = 1800 frames)
-3. Loop through all frames sequentially:
-   - Set progress value (triggers React re-render)
-   - Apply zoom-to-track if enabled
-   - Wait for tiles to load using `waitForTilesToLoad()` (100-1500ms per zoom change)
-   - Draw composite frame: tiles → tracks → markers → labels → legend
-   - Store frame as `ImageData` in memory array
-4. Progress bar shows pre-render progress (0-100%)
-5. **MediaRecorder is NOT started yet**
+**Fallback path — MediaRecorder two-phase export** (older browsers only):
+1. **Phase 1 (pre-render)**: renders every frame and stores it as a **compressed WebP/PNG blob**
+   (`canvas.toBlob`, ~hundreds of KB each) — NOT raw ImageData (~8 MB each), to limit RAM use
+2. **Phase 2 (playback)**: starts MediaRecorder on `captureStream(0)`, then for each stored frame:
+   decode via `createImageBitmap`, draw, call `videoTrack.requestFrame()`, and wait until the exact
+   target wall-clock time
+3. MediaRecorder is started **only** for Phase 2 (critical for correct duration)
+4. FFmpeg.wasm FPS correction is applied if the encoded duration is off by >10%
 
-**Phase 2: Playback** (real-time, exactly equals video duration):
-1. Start MediaRecorder with `captureStream(targetFPS)`
-2. Loop through pre-rendered frames at precise intervals:
-   - Calculate target time: `startTime + (frameIndex × frameDuration)`
-   - Draw pre-rendered `ImageData` to canvas
-   - Wait until exact target time
-   - Stream auto-captures at specified FPS
-3. After all frames played back, stop MediaRecorder
-4. Download video blob (WebM, MP4, or WebM VP8 depending on browser)
+If neither path is available (very old iOS), an alert with screen-recording instructions is shown.
 
-**Frame Capture Function** (`captureFrame`):
-- Draws composite frame to offscreen canvas
-- Layer order: map tiles → direct track rendering → labels → legend → video title
-- Direct track rendering bypasses Leaflet for reliability
-- Includes full track preview (dimmed) if `showAllTracks` enabled
-- Draws position markers (white-rimmed circles) at current position
+**Shared helpers**:
+- `renderExportFrame(frame, totalFrames, ...)`: sets progress, applies zoom-to-track, waits for tiles
+  (`waitForTilesToLoad`), composites via `captureFrame` — used by both export paths
+- `captureFrame(...)`: draws composite frame: map tiles → tracks → labels → legend → video title
+- `drawTracksDirect(...)`: bypasses Leaflet canvas renderer for reliability (iOS/Safari fix);
+  draws tracks, markers, and previews directly to the export canvas
+- `restoreMapSize` / `downloadVideoBlob` / `finishExport`: cleanup helpers
 
-**Direct Track Rendering** (`drawTracksDirect`):
-- Bypasses Leaflet canvas renderer for reliability (iOS/Safari fix)
-- Converts lat/lon to pixel coordinates using map bounds
-- Draws tracks, markers, and previews directly to canvas
-- Ensures all visual elements appear in exported video
-
-**Tile Loading Optimization** (`waitForTilesToLoad`):
-- Smart detection: only waits when zoom changes
-- Fast path if tiles already loaded (16ms check)
-- Max wait time: 1500ms for new tiles after zoom
-- No wait needed if zoom unchanged (just `requestAnimationFrame`)
+**Platform support (v2.4.0)**:
+- **Desktop Chrome/Edge/Firefox 130+/Safari 16.4+**: WebCodecs MP4 export
+- **iOS 16.4+ / modern Android**: WebCodecs MP4 export (the old hard iOS block was removed)
+- **Older browsers**: MediaRecorder WebM fallback
+- **Very old iOS**: alert with screen-recording instructions
 
 #### State Management
 
@@ -147,9 +141,9 @@ All state managed through React useState/useRef hooks:
 - `isRecording`, `isRendering`, `renderProgress`: Export state
 - `showAllTracks`, `showLabels`, `showLegend`: Display toggles
 - `animationStyle`: 'simultaneous' or 'sequential'
-- `zoomToTrack`, `zoomLevel`: Zoom controls
+- `zoomToTrack`, `zoomLevel`, `centeredTrackId`: Zoom controls
 - `exportAspectRatio`, `exportResolution`: Export settings
-- `exportDuration`: Video duration in seconds (5-300s, default 60s)
+- `exportDuration`: Video duration in seconds — auto-computed from speed (10-60s)
 - `exportFPS`: Target frame rate (15-60 FPS, default 30 FPS)
 - `exportQuality`: Video quality preset ('low', 'medium', 'high', 'ultra')
 - `exportFormat`: Current export format ('MP4', 'WebM (VP9)', 'WebM (VP8)')
@@ -160,7 +154,8 @@ All state managed through React useState/useRef hooks:
 - `polylineRefs`: Array of Leaflet polyline objects
 - `isPlayingRef`: Synced with isPlaying for animation loop
 - `mediaRecorderRef`, `compositeCanvasRef`, `compositeStreamRef`: Export rendering
-- `renderCancelledRef`: Cancel signal for export
+- `renderCancelledRef`: Cancel signal for export (checked by both export paths)
+- `ffmpegRef`, `ffmpegLoadedRef`: FFmpeg.wasm (fallback path only)
 
 ## Development Workflow
 
@@ -176,10 +171,17 @@ npx http-server
 
 **IMPORTANT**: Do not open `index.html` directly as `file://` - CORS will block map tiles.
 
+### Syntax Validation
+The app is a single HTML file with in-browser Babel. To check the JS/JSX parses:
+```bash
+awk '/<script type="text\/babel">/{flag=1;next}/<\/script>/{if(flag){flag=0}}flag' index.html > /tmp/app.jsx
+npx -y esbuild /tmp/app.jsx --outfile=/dev/null
+```
+
 ### Making Changes
 
-1. **Update version number** in `APP_VERSION` (around line 839)
-2. **Add changelog entry** in comments above version (around line 787-794)
+1. **Update version number** in `APP_VERSION`
+2. **Add changelog entry** in comments above version
 3. Test locally with `python -m http.server 8000`
 4. Commit and push to GitHub (auto-deploys to GitHub Pages)
 
@@ -205,18 +207,20 @@ Edit tile layer URLs (search for "ArcGIS" or "openstreetmap"):
 - Default speed range: `0.1` to `5.0`
 - Speed slider step: `0.1`
 - Zoom levels: `12` to `18`
+- Video/preview duration: `clamp(60 / speed, 10, 60)` seconds (single source of truth for both)
 
 ### Video Export Settings
 User-configurable via UI:
-- **Duration**: 5-300 seconds (default: 60s)
+- **Duration**: auto-computed from playback speed (10-60s)
 - **FPS**: 15-60 FPS (default: 30 FPS)
 - **Quality**: Low, Medium, High, Ultra (affects bitrate)
 - **Resolution**: Multiple 16:9 and 4:3 presets (720p to 4K)
 - **Aspect Ratio**: 16:9 or 4:3
 
 Hardcoded timing values:
-- Tile wait after zoom: 100ms + 1500ms max for tile loading
-- Frame interval: `1000 / targetFPS` milliseconds
+- Tile wait after zoom change: 150ms + up to 2000ms for tile loading
+- WebCodecs frame timestamps: `frame * round(1e6 / targetFPS)` microseconds
+- Keyframe interval (WebCodecs): every 2 seconds (`targetFPS * 2` frames)
 
 ### Color Scheme
 Primary brand color `#fc4c02` used for:
@@ -232,40 +236,35 @@ Primary brand color `#fc4c02` used for:
 
 ### Browser Compatibility
 **Desktop:**
-- Requires `MediaRecorder` API (Chrome, Firefox, Edge, Safari on macOS)
-- Safari may have WebM codec issues (no MP4 support)
-- Canvas `captureStream()` required for video export
+- WebCodecs MP4 export: Chrome/Edge 94+, Firefox 130+, Safari 16.4+
+- Older browsers fall back to MediaRecorder (WebM)
 
 **Mobile:**
-- **iOS**: Animation works, but video export **NOT supported** (MediaRecorder API unavailable)
-- iOS detection added in v2.1.4 - shows screen recording instructions instead
-- **Android**: May work depending on browser, not extensively tested
+- **iOS 16.4+**: MP4 export works via WebCodecs
+- **Older iOS**: export unavailable; alert offers screen-recording instructions
+- **Android**: MP4 export works in modern Chrome
 
 ### Performance Considerations
 - Large GPX files (>10,000 points) may slow animation
-- Video export is CPU and memory intensive:
-  - Phase 1 pre-renders all frames (e.g., 1800 frames for 60s @ 30fps)
-  - Each frame stored as ImageData in memory (can be several GB for 4K videos)
-  - Phase 2 playback runs in real-time (60s video = 60s playback)
-- Longer durations and higher resolutions increase export time significantly
-- Rendering overlay hides map during Phase 1 to improve performance
+- WebCodecs path: no frame storage; memory use is flat regardless of duration/resolution
+- Fallback path: frames stored as compressed blobs (~hundreds of KB each); much lighter than the
+  old raw ImageData approach but still grows with duration × FPS
+- Longer durations and higher resolutions increase export time
+- Rendering overlay hides map during export
 
 ## Debugging
 
 ### Common Issues
 
-**Video export not working on iOS**:
-- This is expected behavior as of v2.1.4
-- iOS Safari does not support MediaRecorder API
-- Alert message automatically shown to iOS users with screen recording instructions
-- No code fix possible - platform limitation
-- Users should use iOS Screen Recording or switch to desktop browser
+**Video export fails / wrong format**:
+- Check console for "Starting WebCodecs single-pass MP4 export" — if absent, the browser fell back
+  to MediaRecorder (look for "Codec Support Detection" logs)
+- `pickAvcEncoderConfig` returning null means WebCodecs/H.264 unavailable on that browser
 
-**Video has wrong FPS or duration**:
-- Check console logs for "Phase 1 complete" and "Phase 2: Playing back"
+**Video has wrong FPS or duration (fallback path only)**:
 - Verify MediaRecorder only starts during Phase 2 (look for "🔴 Recording started")
-- Ensure Phase 2 playback completes (should take exactly the video duration)
 - Check browser console for "Video Metadata Inspection" - should show correct FPS/duration
+- FFmpeg.wasm correction kicks in automatically if duration is off by >10%
 
 **Video export produces 1KB corrupted file**:
 - Canvas is CORS-tainted from non-CORS images
@@ -283,16 +282,14 @@ Primary brand color `#fc4c02` used for:
 - Verify `requestAnimationFrame` loop not cancelled
 - Test with single track to isolate performance
 
-**Export Phase 1 too slow**:
-- Each frame waits for tiles when zoom changes (100ms + 1500ms max)
+**Export too slow**:
+- Each frame waits for tiles when zoom changes (150ms + up to 2000ms)
 - Disable "Zoom to Track" to speed up export (no zoom changes = no tile waits)
-- Consider lower FPS or shorter duration for faster exports
+- Consider lower FPS for faster exports
 
 **Out of memory during export**:
-- Reduce resolution (4K uses ~4x memory vs 1080p)
-- Reduce duration (60s = 1800 frames @ 30fps, 300s = 9000 frames)
-- Each frame stored as ImageData in memory during Phase 1
-- Close other tabs/applications to free up RAM
+- Should no longer occur on the WebCodecs path (no frame storage)
+- On the fallback path, reduce resolution or duration (frames stored as compressed blobs)
 
 ## Deployment
 
@@ -307,14 +304,15 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 2.1.4**
+**Current Version: 2.4.0**
 
-### Major Achievements (v2.1.x)
-- ✅ **Solved FPS Problem**: Videos now export at exactly the specified FPS and duration
-- ✅ **Two-Phase Export**: Pre-rendering phase + playback phase ensures quality and timing
+### Major Achievements
+- ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
+- ✅ **Out-of-Memory Fix (v2.4.0)**: No frame storage on the preferred path; compressed frames on fallback
+- ✅ **Preview/Export Speed Match (v2.4.0)**: Single duration source drives both preview and export
+- ✅ **Security Hardening (v2.4.0)**: Label XSS fix, GPX validation, file size cap
+- ✅ **Solved FPS Problem (v2.1.x)**: Videos export at exactly the specified FPS and duration
 - ✅ **Visual Completeness**: Position markers, full track preview, map tiles all included
-- ✅ **Browser Playback Match**: Export output matches browser preview exactly
-- ✅ **iOS Compatibility Handling**: Gracefully blocks iOS export with helpful instructions
 
 ### Technical Journey
 - **v1.x**: Initial implementation, struggled with FPS accuracy
@@ -322,9 +320,13 @@ No build process required - single HTML file is the entire app.
 - **v2.0.0**: Attempted real-time capture (failed due to tile loading speed)
 - **v2.1.0**: Breakthrough with two-phase export system
 - **v2.1.1**: Critical fix - start recording only during Phase 2
-- **v2.1.2**: Added position markers and full track preview to exports
-- **v2.1.3**: Fixed `showAllTracks` toggle to work in browser playback
-- **v2.1.4**: Added iOS detection to prevent export failures and guide users to screen recording
+- **v2.1.4**: Added iOS detection to block export (later superseded)
+- **v2.2.x**: Centered-track follow, configurable map center, label auto-naming
+- **v2.3.0**: captureStream(0) + manual requestFrame timing; duration computed from playback speed
+- **v2.4.0**: WebCodecs single-pass MP4 export; RAM fix; preview/export speed match; security hardening
 
 ### Key Learning
-The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS. The two-phase approach decouples slow tile loading (Phase 1) from precise timing requirements (Phase 2), solving the fundamental problem that plagued earlier versions.
+The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which
+forced the complex two-phase design. The WebCodecs API removes that constraint entirely: frames carry
+explicit timestamps, so rendering can be as slow as needed while output timing stays exact — and
+nothing has to be buffered in RAM. MediaRecorder remains only as a fallback for older browsers.

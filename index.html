@@ -10,6 +10,7 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
   <style>
     * {
       margin: 0;
@@ -1018,6 +1019,7 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 2.4.0 - MAJOR: WebCodecs single-pass MP4 export - frames are encoded directly to an in-memory MP4 as they render (no RAM frame storage, exact FPS/duration, MP4 output on Chrome/Edge/Firefox 130+/Safari 16.4+ including iOS and Android). MediaRecorder fallback now stores compressed WebP frames (~30x less RAM than raw ImageData). Preview playback speed now matches exported video exactly (both run for the computed export duration). Security hardening: HTML-escape track labels (XSS fix), validate GPX coordinates/timestamps, reject malformed XML, 50MB file size cap.
     // 2.3.0 - Fix jittery video export using captureStream(0) with manual requestFrame() for precise frame timing. Video duration now automatically computed from playback speed (60s at 1x, 30s at 2x, etc.)
     // 2.2.1 - Add configurable initial map center (default: Oahu), auto-populate track labels from filename prefix before underscore (e.g., "Bob_track_1.gpx" → "Bob")
     // 2.2.0 - Add centered track feature: select specific track to follow during zoom animation, fixed zoom slider to directly control zoom level (no auto-fit), relative zoom level indicator (0, ±1, ±2, ±3), max video duration set to 60s, fixed centered track not being followed properly, fixed zoom not applying in exported videos (increased tile wait times), fixed type mismatch causing centered track selection to fail
@@ -1074,12 +1076,21 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "2.3.0";
+    const APP_VERSION = "2.4.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
     const INITIAL_MAP_CENTER = [21.284, -157.718];
     const INITIAL_MAP_ZOOM = 13;
+
+    // Escape user-provided text before injecting into HTML strings (prevents XSS
+    // via track labels, which come from filenames and user-editable inputs)
+    const escapeHtml = (str) => String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
 
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
@@ -1214,15 +1225,25 @@
         return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
       };
 
-      const parseGPX = (text, filename, trackNumber) => {
+      const parseGPX = (text, filename) => {
         const parser = new DOMParser();
         const doc = parser.parseFromString(text, 'text/xml');
+
+        // Reject files that are not well-formed XML
+        if (doc.querySelector('parsererror')) {
+          return null;
+        }
+
         const points = [];
 
         const trkpts = doc.querySelectorAll('trkpt');
         trkpts.forEach(pt => {
           const lat = parseFloat(pt.getAttribute('lat'));
           const lon = parseFloat(pt.getAttribute('lon'));
+          // Skip malformed points (missing, non-numeric, or out-of-range coordinates)
+          if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+            return;
+          }
           const time = pt.querySelector('time')?.textContent;
           points.push({ lat, lon, time });
         });
@@ -1235,10 +1256,14 @@
         let duration = null;
 
         if (points.length > 0 && points[0].time) {
-          // Calculate duration if time data is available
-          startTime = new Date(points[0].time);
-          endTime = new Date(points[points.length - 1].time);
-          duration = endTime - startTime; // duration in milliseconds
+          // Calculate duration if time data is available (ignore unparseable timestamps)
+          const parsedStart = new Date(points[0].time);
+          const parsedEnd = new Date(points[points.length - 1].time);
+          if (!isNaN(parsedStart) && !isNaN(parsedEnd)) {
+            startTime = parsedStart;
+            endTime = parsedEnd;
+            duration = endTime - startTime; // duration in milliseconds
+          }
         }
 
         return {
@@ -1253,35 +1278,43 @@
         };
       };
 
+      const MAX_GPX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB cap to avoid exhausting memory
+
       const handleFileUpload = (files) => {
         Array.from(files).forEach(file => {
-          if (file.name.endsWith('.gpx')) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-              setTracks(prev => {
-                const trackNumber = prev.length + 1;
-                const track = parseGPX(e.target.result, file.name, trackNumber);
+          if (!file.name.toLowerCase().endsWith('.gpx')) return;
 
-                // Auto-populate title with date from first track
-                if (prev.length === 0 && track.startTime && !videoTitle) {
-                  const date = new Date(track.startTime);
-                  setVideoTitle(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
-                }
-
-                return [...prev, track];
-              });
-
-              // Fit map to bounds
-              const track = parseGPX(e.target.result, file.name, tracks.length + 1);
-              if (track.points.length > 0) {
-                const bounds = L.latLngBounds(
-                  track.points.map(p => [p.lat, p.lon])
-                );
-                mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50] });
-              }
-            };
-            reader.readAsText(file);
+          if (file.size > MAX_GPX_FILE_SIZE) {
+            alert(`"${file.name}" is too large (max 50 MB).`);
+            return;
           }
+
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const track = parseGPX(e.target.result, file.name);
+
+            if (!track || track.points.length === 0) {
+              alert(`"${file.name}" could not be loaded: no valid track points found.`);
+              return;
+            }
+
+            setTracks(prev => {
+              // Auto-populate title with date from first track
+              if (prev.length === 0 && track.startTime && !videoTitle) {
+                const date = new Date(track.startTime);
+                setVideoTitle(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+              }
+
+              return [...prev, track];
+            });
+
+            // Fit map to bounds
+            const bounds = L.latLngBounds(
+              track.points.map(p => [p.lat, p.lon])
+            );
+            mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50] });
+          };
+          reader.readAsText(file);
         });
       };
 
@@ -1330,8 +1363,9 @@
         const deltaTime = timestamp - lastTimestampRef.current;
         lastTimestampRef.current = timestamp;
 
-        // Base speed: 1% progress per 100ms (completes in 10 seconds at 1x speed)
-        const progressIncrement = (deltaTime / 100) * speed;
+        // Preview pacing matches the exported video exactly: the full animation
+        // takes exportDuration seconds (which is derived from playback speed)
+        const progressIncrement = (deltaTime / (exportDuration * 1000)) * 100;
 
         setProgress(prev => {
           const newProgress = prev + progressIncrement;
@@ -1361,7 +1395,7 @@
           }
           lastTimestampRef.current = null;
         }
-      }, [isPlaying, speed]);
+      }, [isPlaying, speed, exportDuration]);
 
       // Store original bounds when tracks change
       useEffect(() => {
@@ -1470,7 +1504,7 @@
             if (track.label && showLabels) {
               const labelIcon = L.divIcon({
                 className: 'map-label',
-                html: `<div class="map-label" style="color: ${track.color}">${track.label}</div>`,
+                html: `<div class="map-label" style="color: ${escapeHtml(track.color)}">${escapeHtml(track.label)}</div>`,
                 iconSize: null,
                 iconAnchor: [-15, 10]
               });
@@ -2109,26 +2143,274 @@
         }
       };
 
+      // Restore the on-screen map to its pre-export size
+      const restoreMapSize = (mapContainer) => {
+        if (originalMapSizeRef.current) {
+          mapContainer.style.width = originalMapSizeRef.current.width;
+          mapContainer.style.height = originalMapSizeRef.current.height;
+          mapInstanceRef.current.invalidateSize();
+          originalMapSizeRef.current = null;
+        }
+      };
+
+      // Trigger a download of the finished video blob
+      const downloadVideoBlob = (blob, fileExtension) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `gpx-animation-${Date.now()}.${fileExtension}`;
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+
+      // Reset all export-related state and release capture resources
+      const finishExport = () => {
+        setIsRendering(false);
+        setIsRecording(false);
+        setExportFormat('');
+        isRecordingRef.current = false;
+        renderCancelledRef.current = false;
+        if (compositeStreamRef.current) {
+          compositeStreamRef.current.getTracks().forEach(track => track.stop());
+          compositeStreamRef.current = null;
+        }
+        compositeCanvasRef.current = null;
+      };
+
+      // Render a single export frame onto the composite canvas: advances the
+      // animation progress, applies zoom-to-track, waits for tiles, composites.
+      // Shared by both the WebCodecs and MediaRecorder export paths.
+      const renderExportFrame = async (frame, totalFrames, mapContainer, compositeCanvas, exportWidth, exportHeight) => {
+        const progressValue = (frame / totalFrames) * 100;
+        setProgress(progressValue);
+        setRenderProgress(progressValue);
+
+        // Wait for React to update and render
+        await new Promise(resolve => requestAnimationFrame(resolve));
+
+        // Track whether zoom changed this frame
+        let zoomChanged = false;
+
+        // Apply zoom-to-track for this frame if enabled
+        if (zoomToTrack && progressValue > 0 && progressValue < 100 && mapInstanceRef.current && tracks.length > 0) {
+          const currentPositions = [];
+          const tracksToFollow = centeredTrackId
+            ? tracks.filter(t => t.id == centeredTrackId) // Use == to handle string/number comparison
+            : tracks;
+
+          tracksToFollow.forEach((track) => {
+            // Find the actual index of this track in the original tracks array
+            const trackIndex = tracks.findIndex(t => t.id === track.id);
+            let visiblePoints;
+
+            if (animationStyle === 'sequential') {
+              const tracksBeforeThis = tracks.slice(0, trackIndex);
+              const totalPointsBefore = tracksBeforeThis.reduce((sum, t) => sum + t.points.length, 0);
+              const totalPoints = tracks.reduce((sum, t) => sum + t.points.length, 0);
+              const currentTotalPoint = Math.floor((progressValue / 100) * totalPoints);
+              const pointsForThisTrack = Math.max(0, currentTotalPoint - totalPointsBefore);
+              visiblePoints = track.points.slice(0, Math.min(pointsForThisTrack, track.points.length));
+            } else {
+              // Simultaneous - use absolute time-based synchronization if available
+              if (track.duration && track.startTime) {
+                const tracksWithTime = tracks.filter(t => t.startTime && t.endTime);
+                const earliestStart = Math.min(...tracksWithTime.map(t => t.startTime.getTime()));
+                const latestEnd = Math.max(...tracksWithTime.map(t => t.endTime.getTime()));
+                const totalTimeSpan = latestEnd - earliestStart;
+
+                const currentAbsoluteTime = earliestStart + (progressValue / 100) * totalTimeSpan;
+
+                if (currentAbsoluteTime < track.startTime.getTime()) {
+                  visiblePoints = [];
+                } else {
+                  let pointIndex = 0;
+                  for (let i = 0; i < track.points.length; i++) {
+                    if (track.points[i].time) {
+                      const pointTime = new Date(track.points[i].time);
+
+                      if (pointTime.getTime() <= currentAbsoluteTime) {
+                        pointIndex = i;
+                      } else {
+                        break;
+                      }
+                    }
+                  }
+
+                  visiblePoints = track.points.slice(0, pointIndex + 1);
+                }
+              } else {
+                const pointCount = Math.floor((progressValue / 100) * track.points.length);
+                visiblePoints = track.points.slice(0, pointCount);
+              }
+            }
+
+            if (visiblePoints.length > 0) {
+              const lastPoint = visiblePoints[visiblePoints.length - 1];
+              currentPositions.push([lastPoint.lat, lastPoint.lon]);
+            }
+          });
+
+          if (currentPositions.length > 0) {
+            // Calculate center point of all current positions
+            const centerLat = currentPositions.reduce((sum, pos) => sum + pos[0], 0) / currentPositions.length;
+            const centerLon = currentPositions.reduce((sum, pos) => sum + pos[1], 0) / currentPositions.length;
+            // Always use setView with the zoom level for direct control
+            mapInstanceRef.current.setView([centerLat, centerLon], zoomLevel, { animate: false });
+
+            // Force Leaflet to immediately apply the zoom and start loading tiles
+            mapInstanceRef.current.invalidateSize(false);
+            mapInstanceRef.current._resetView(mapInstanceRef.current.getCenter(), mapInstanceRef.current.getZoom());
+
+            // Always wait for tiles when zoom-to-track is enabled (position changes every frame)
+            zoomChanged = true;
+            // Wait for zoom and tiles to ensure proper rendering
+            await new Promise(resolve => setTimeout(resolve, 150));
+            await waitForTilesToLoad(mapContainer, 2000);
+          }
+        } else if (progressValue === 0 || progressValue >= 100) {
+          // Zoom out to show all tracks at start/end
+          if (tracks.length > 0 && originalBoundsRef.current && mapInstanceRef.current) {
+            mapInstanceRef.current.fitBounds(originalBoundsRef.current, {
+              padding: [50, 50],
+              animate: false
+            });
+            // Force Leaflet to immediately apply the zoom
+            mapInstanceRef.current.invalidateSize(false);
+            mapInstanceRef.current._resetView(mapInstanceRef.current.getCenter(), mapInstanceRef.current.getZoom());
+
+            // Always wait for tiles at start/end (zoom changes)
+            zoomChanged = true;
+            // Wait for zoom and tiles
+            await new Promise(resolve => setTimeout(resolve, 150));
+            await waitForTilesToLoad(mapContainer, 2000);
+          }
+        }
+
+        // Always wait for at least one frame to ensure rendering completes
+        if (!zoomChanged) {
+          await new Promise(resolve => requestAnimationFrame(resolve));
+        }
+
+        // Render frame to canvas
+        captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, 0, 0, 1, exportWidth, exportHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks, legendPosition, progressValue, animationStyle, mapInstanceRef.current, showAllTracks);
+      };
+
+      // Find a supported H.264 encoder configuration for WebCodecs MP4 export.
+      // Returns null when WebCodecs (or the mp4-muxer library) is unavailable.
+      const pickAvcEncoderConfig = async (width, height, framerate, bitrate) => {
+        if (typeof VideoEncoder === 'undefined' || typeof Mp4Muxer === 'undefined') {
+          return null;
+        }
+
+        // Try high levels first (needed for 4K/60fps), lower levels as fallback
+        const codecCandidates = [
+          'avc1.640034', // High profile, level 5.2 (4K @ 60fps)
+          'avc1.640033', // High profile, level 5.1 (4K @ 30fps)
+          'avc1.64002A', // High profile, level 4.2 (1080p @ 60fps)
+          'avc1.640028', // High profile, level 4.0
+          'avc1.4D4028', // Main profile, level 4.0
+          'avc1.42E01E'  // Baseline profile, level 3.0
+        ];
+
+        for (const codec of codecCandidates) {
+          const config = {
+            codec,
+            width,
+            height,
+            bitrate,
+            framerate,
+            avc: { format: 'avc' } // MP4 container requires AVC format (not Annex B)
+          };
+          try {
+            const support = await VideoEncoder.isConfigSupported(config);
+            if (support.supported) {
+              return config;
+            }
+          } catch (e) {
+            // Config rejected by this browser - try the next candidate
+          }
+        }
+        return null;
+      };
+
+      // SINGLE-PASS WEBCODECS EXPORT: each frame is encoded straight into an
+      // in-memory MP4 as soon as it is rendered. Frames carry explicit
+      // timestamps, so FPS and duration are exact regardless of render speed,
+      // and no decoded frames accumulate in RAM (fixes out-of-memory crashes).
+      const exportWithWebCodecs = async (avcConfig, totalFrames, targetFPS, mapContainer, compositeCanvas, exportWidth, exportHeight) => {
+        const muxer = new Mp4Muxer.Muxer({
+          target: new Mp4Muxer.ArrayBufferTarget(),
+          video: {
+            codec: 'avc',
+            width: exportWidth,
+            height: exportHeight,
+            frameRate: targetFPS
+          },
+          fastStart: 'in-memory'
+        });
+
+        let encoderError = null;
+        const encoder = new VideoEncoder({
+          output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+          error: (e) => { encoderError = e; }
+        });
+        encoder.configure(avcConfig);
+
+        const frameDurationUs = Math.round(1000000 / targetFPS);
+        const exportStartTime = Date.now();
+
+        for (let frame = 0; frame <= totalFrames; frame++) {
+          if (renderCancelledRef.current || encoderError) {
+            break;
+          }
+
+          await renderExportFrame(frame, totalFrames, mapContainer, compositeCanvas, exportWidth, exportHeight);
+
+          const videoFrame = new VideoFrame(compositeCanvas, {
+            timestamp: frame * frameDurationUs,
+            duration: frameDurationUs
+          });
+          encoder.encode(videoFrame, { keyFrame: frame % (targetFPS * 2) === 0 });
+          videoFrame.close();
+
+          // Backpressure: don't let unencoded frames pile up in memory
+          while (encoder.encodeQueueSize > 4 && !encoderError) {
+            await new Promise(resolve => setTimeout(resolve, 5));
+          }
+
+          if (frame % 50 === 0) {
+            console.log(`Encoded frame ${frame}/${totalFrames} (${((frame / totalFrames) * 100).toFixed(1)}%)`);
+          }
+        }
+
+        if (encoderError) {
+          try { encoder.close(); } catch (e) { /* already closed */ }
+          throw encoderError;
+        }
+
+        if (renderCancelledRef.current) {
+          try { encoder.close(); } catch (e) { /* already closed */ }
+          console.log('Export cancelled during encoding');
+          return null;
+        }
+
+        await encoder.flush();
+        muxer.finalize();
+        encoder.close();
+
+        console.log(`\n=== Export Complete (WebCodecs MP4) ===`);
+        console.log(`Encoded ${totalFrames + 1} frames in ${((Date.now() - exportStartTime) / 1000).toFixed(1)}s`);
+        console.log(`Video: ${exportWidth}x${exportHeight} @ ${targetFPS} FPS, duration ${(totalFrames / targetFPS).toFixed(1)}s`);
+        console.log(`=======================================\n`);
+
+        return new Blob([muxer.target.buffer], { type: 'video/mp4' });
+      };
+
       const startRecording = async () => {
         try {
           // Detect iOS devices (iPhone, iPad, iPod)
           const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
                         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPad on iOS 13+
-
-          if (isIOS) {
-            // iOS doesn't support MediaRecorder API properly - show helpful message
-            alert(
-              '📱 Video Export Not Available on iOS\n\n' +
-              'Unfortunately, iOS Safari does not support the MediaRecorder API needed for video export.\n\n' +
-              '✅ How to Record on iOS:\n' +
-              '1. Open Control Center (swipe down from top-right)\n' +
-              '2. Tap the Screen Recording button (circle icon)\n' +
-              '3. Start your animation playback\n' +
-              '4. Recording saves to Photos app\n\n' +
-              '💻 Alternative: Use a desktop browser (Chrome, Firefox, or Safari on Mac) for built-in video export.'
-            );
-            return;
-          }
 
           const mapContainer = mapInstanceRef.current.getContainer();
           const initialCanvases = Array.from(mapContainer.querySelectorAll('canvas'));
@@ -2194,6 +2476,52 @@
 
           const bitsPerPixelFrame = qualityPresets[exportQuality] || qualityPresets['high'];
           const targetBitrate = Math.round(pixelCount * targetFPS * bitsPerPixelFrame);
+
+          const totalFrames = Math.round(exportDuration * targetFPS);
+
+          // ---------- PREFERRED PATH: WebCodecs single-pass MP4 export ----------
+          // No frame storage in RAM, exact FPS/duration, and MP4 output on all
+          // supporting browsers (Chrome, Edge, Firefox 130+, Safari 16.4+ incl. iOS)
+          const avcConfig = await pickAvcEncoderConfig(exportWidth, exportHeight, targetFPS, targetBitrate);
+
+          if (avcConfig) {
+            console.log(`Starting WebCodecs single-pass MP4 export: ${totalFrames} frames at ${targetFPS} FPS (codec: ${avcConfig.codec})`);
+            console.log(`Export settings: ${exportWidth}x${exportHeight} @ ${targetFPS}fps, ${(targetBitrate/1000000).toFixed(1)} Mbps, ${exportQuality} quality`);
+            setExportFormat('MP4');
+            setIsRendering(true);
+            setRenderProgress(0);
+            setIsRecording(true);
+            isRecordingRef.current = true;
+            renderCancelledRef.current = false;
+
+            const blob = await exportWithWebCodecs(avcConfig, totalFrames, targetFPS, mapContainer, compositeCanvas, exportWidth, exportHeight);
+
+            restoreMapSize(mapContainer);
+            if (blob) {
+              downloadVideoBlob(blob, 'mp4');
+            }
+            finishExport();
+            return;
+          }
+
+          // ---------- FALLBACK PATH: MediaRecorder two-phase export ----------
+          if (typeof MediaRecorder === 'undefined' || typeof compositeCanvas.captureStream !== 'function') {
+            restoreMapSize(mapContainer);
+            if (isIOS) {
+              alert(
+                '📱 Video Export Not Available on this iOS version\n\n' +
+                'Video export requires iOS 16.4 or newer. Please update iOS, or use the built-in screen recording:\n\n' +
+                '1. Open Control Center (swipe down from top-right)\n' +
+                '2. Tap the Screen Recording button (circle icon)\n' +
+                '3. Start your animation playback\n' +
+                '4. Recording saves to Photos app\n\n' +
+                '💻 Alternative: Use a desktop browser (Chrome, Firefox, or Edge) for built-in video export.'
+              );
+            } else {
+              alert('Video export is not supported in this browser. Please use a recent version of Chrome, Edge, Firefox, or Safari.');
+            }
+            return;
+          }
 
           // Use captureStream(0) for manual frame capture control
           // This gives us precise control over when frames are captured
@@ -2471,17 +2799,13 @@
           // TWO-PHASE EXPORT: Pre-render frames, then play back at correct FPS
           // Phase 1: Render all frames (slow, waits for tiles)
           // Phase 2: Play back frames at exact FPS while capturing
-          const totalFrames = Math.round(exportDuration * targetFPS);
-
           console.log(`Starting 2-phase video export: ${totalFrames} frames at ${targetFPS} FPS`);
           console.log(`Phase 1: Pre-rendering ${totalFrames} frames (waits for tiles)`);
 
-          // Track zoom state
-          let lastZoomLevel = mapInstanceRef.current.getZoom();
-          let lastCenter = mapInstanceRef.current.getCenter();
-
           const exportStartTime = Date.now();
-          const renderedFrames = []; // Array to store rendered frame ImageData
+          // Frames stored as compressed image blobs (WebP/PNG, hundreds of KB each)
+          // instead of raw ImageData (~8 MB each at 1080p) to avoid exhausting RAM
+          const renderedFrames = [];
 
           // PHASE 1: Pre-render all frames
           for (let frame = 0; frame <= totalFrames; frame++) {
@@ -2489,147 +2813,24 @@
               break;
             }
 
-            const progressValue = (frame / totalFrames) * 100;
-            setProgress(progressValue);
-            setRenderProgress(progressValue);
+            await renderExportFrame(frame, totalFrames, mapContainer, compositeCanvas, exportWidth, exportHeight);
 
-            // Wait for React to update and render
-            await new Promise(resolve => requestAnimationFrame(resolve));
-
-            // Track whether zoom changed this frame
-            let zoomChanged = false;
-
-            // Apply zoom-to-track for this frame if enabled
-            if (zoomToTrack && progressValue > 0 && progressValue < 100 && mapInstanceRef.current && tracks.length > 0) {
-              const currentPositions = [];
-              const tracksToFollow = centeredTrackId
-                ? tracks.filter(t => t.id == centeredTrackId) // Use == to handle string/number comparison
-                : tracks;
-
-              tracksToFollow.forEach((track) => {
-                // Find the actual index of this track in the original tracks array
-                const trackIndex = tracks.findIndex(t => t.id === track.id);
-                let visiblePoints;
-
-                if (animationStyle === 'sequential') {
-                  const tracksBeforeThis = tracks.slice(0, trackIndex);
-                  const totalPointsBefore = tracksBeforeThis.reduce((sum, t) => sum + t.points.length, 0);
-                  const totalPoints = tracks.reduce((sum, t) => sum + t.points.length, 0);
-                  const currentTotalPoint = Math.floor((progressValue / 100) * totalPoints);
-                  const pointsForThisTrack = Math.max(0, currentTotalPoint - totalPointsBefore);
-                  visiblePoints = track.points.slice(0, Math.min(pointsForThisTrack, track.points.length));
-                } else {
-                  // Simultaneous - use absolute time-based synchronization if available
-                  if (track.duration && track.startTime) {
-                    const tracksWithTime = tracks.filter(t => t.startTime && t.endTime);
-                    const earliestStart = Math.min(...tracksWithTime.map(t => t.startTime.getTime()));
-                    const latestEnd = Math.max(...tracksWithTime.map(t => t.endTime.getTime()));
-                    const totalTimeSpan = latestEnd - earliestStart;
-
-                    const currentAbsoluteTime = earliestStart + (progressValue / 100) * totalTimeSpan;
-
-                    if (currentAbsoluteTime < track.startTime.getTime()) {
-                      visiblePoints = [];
-                    } else {
-                      let pointIndex = 0;
-                      for (let i = 0; i < track.points.length; i++) {
-                        if (track.points[i].time) {
-                          const pointTime = new Date(track.points[i].time);
-
-                          if (pointTime.getTime() <= currentAbsoluteTime) {
-                            pointIndex = i;
-                          } else {
-                            break;
-                          }
-                        }
-                      }
-
-                      visiblePoints = track.points.slice(0, pointIndex + 1);
-                    }
-                  } else {
-                    const pointCount = Math.floor((progressValue / 100) * track.points.length);
-                    visiblePoints = track.points.slice(0, pointCount);
-                  }
-                }
-
-                if (visiblePoints.length > 0) {
-                  const lastPoint = visiblePoints[visiblePoints.length - 1];
-                  currentPositions.push([lastPoint.lat, lastPoint.lon]);
-                }
-              });
-
-              if (currentPositions.length > 0) {
-                // Calculate center point of all current positions
-                const centerLat = currentPositions.reduce((sum, pos) => sum + pos[0], 0) / currentPositions.length;
-                const centerLon = currentPositions.reduce((sum, pos) => sum + pos[1], 0) / currentPositions.length;
-                // Always use setView with the zoom level for direct control
-                mapInstanceRef.current.setView([centerLat, centerLon], zoomLevel, { animate: false });
-
-                // Force Leaflet to immediately apply the zoom and start loading tiles
-                mapInstanceRef.current.invalidateSize(false);
-                mapInstanceRef.current._resetView(mapInstanceRef.current.getCenter(), mapInstanceRef.current.getZoom());
-
-                // Always wait for tiles when zoom-to-track is enabled (position changes every frame)
-                zoomChanged = true;
-                lastZoomLevel = mapInstanceRef.current.getZoom();
-                lastCenter = mapInstanceRef.current.getCenter();
-                // Wait for zoom and tiles to ensure proper rendering
-                await new Promise(resolve => setTimeout(resolve, 150));
-                await waitForTilesToLoad(mapContainer, 2000);
-              }
-            } else if (progressValue === 0 || progressValue >= 100) {
-              // Zoom out to show all tracks at start/end
-              if (tracks.length > 0 && originalBoundsRef.current && mapInstanceRef.current) {
-                mapInstanceRef.current.fitBounds(originalBoundsRef.current, {
-                  padding: [50, 50],
-                  animate: false
-                });
-                // Force Leaflet to immediately apply the zoom
-                mapInstanceRef.current.invalidateSize(false);
-                mapInstanceRef.current._resetView(mapInstanceRef.current.getCenter(), mapInstanceRef.current.getZoom());
-
-                // Always wait for tiles at start/end (zoom changes)
-                zoomChanged = true;
-                lastZoomLevel = mapInstanceRef.current.getZoom();
-                lastCenter = mapInstanceRef.current.getCenter();
-                // Wait for zoom and tiles
-                await new Promise(resolve => setTimeout(resolve, 150));
-                await waitForTilesToLoad(mapContainer, 2000);
-              }
+            // Save frame as compressed blob
+            const frameBlob = await new Promise(resolve => compositeCanvas.toBlob(resolve, 'image/webp', 0.85));
+            if (frameBlob) {
+              renderedFrames.push(frameBlob);
             }
-
-            // Always wait for at least one frame to ensure rendering completes
-            if (!zoomChanged) {
-              await new Promise(resolve => requestAnimationFrame(resolve));
-            }
-
-            // Render frame to canvas
-            captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks, legendPosition, progressValue, animationStyle, mapInstanceRef.current, showAllTracks);
-
-            // Save frame as ImageData
-            const ctx = compositeCanvas.getContext('2d');
-            const frameData = ctx.getImageData(0, 0, exportWidth, exportHeight);
-            renderedFrames.push(frameData);
 
             // Log progress
             if (frame % 50 === 0) {
-              console.log(`Pre-rendered frame ${frame}/${totalFrames} (${progressValue.toFixed(1)}%)`);
+              console.log(`Pre-rendered frame ${frame}/${totalFrames} (${((frame / totalFrames) * 100).toFixed(1)}%)`);
             }
           }
 
           if (renderCancelledRef.current) {
             console.log('Export cancelled during pre-render phase');
-            setIsRendering(false);
-            setIsRecording(false);
-            isRecordingRef.current = false;
-
-            // Restore map size
-            if (originalMapSizeRef.current) {
-              mapContainer.style.width = originalMapSizeRef.current.width;
-              mapContainer.style.height = originalMapSizeRef.current.height;
-              mapInstanceRef.current.invalidateSize();
-              originalMapSizeRef.current = null;
-            }
+            restoreMapSize(mapContainer);
+            finishExport();
             return;
           }
 
@@ -2648,6 +2849,10 @@
           const playbackStartTime = Date.now();
           const playbackInterval = frameDuration; // Exact interval for target FPS
 
+          // Pipeline frame decoding: decode the next frame during the wait for
+          // the current frame's timeslot, so decode time doesn't eat the frame budget
+          let nextBitmapPromise = renderedFrames.length > 0 ? createImageBitmap(renderedFrames[0]) : null;
+
           for (let i = 0; i < renderedFrames.length; i++) {
             if (renderCancelledRef.current) {
               break;
@@ -2655,9 +2860,14 @@
 
             const targetTime = playbackStartTime + (i * playbackInterval);
 
-            // Draw pre-rendered frame to canvas
+            // Draw pre-decoded frame to canvas, kick off decoding the next one
             const ctx = compositeCanvas.getContext('2d');
-            ctx.putImageData(renderedFrames[i], 0, 0);
+            const frameBitmap = await nextBitmapPromise;
+            if (i + 1 < renderedFrames.length) {
+              nextBitmapPromise = createImageBitmap(renderedFrames[i + 1]);
+            }
+            ctx.drawImage(frameBitmap, 0, 0);
+            frameBitmap.close();
 
             // Manually request frame capture - this ensures the frame is captured
             // exactly when we want it, eliminating timing jitter
@@ -3348,8 +3558,8 @@
                       <li><strong>Download:</strong> Wait for the export to complete, then download your animated video</li>
                     </ol>
                     <p>
-                      <strong>Note for iOS users:</strong> Video export is not supported on iPhone/iPad due to browser limitations.
-                      Please use a desktop browser or use iOS Screen Recording while playing the animation.
+                      <strong>Note for iOS/Android users:</strong> Video export works on iOS 16.4+ and modern Android browsers
+                      (exported as MP4). On older iOS versions, use a desktop browser or iOS Screen Recording while playing the animation.
                     </p>
                   </div>
 
@@ -3387,19 +3597,20 @@
                     <div className="faq-item">
                       <div className="faq-question">What video formats are supported?</div>
                       <div className="faq-answer">
-                        The app exports videos in WebM or MP4 format depending on your browser. Chrome and Firefox
-                        support WebM VP9 (best quality), while Safari may use WebM VP8 or MP4. All modern browsers
-                        can play the exported videos.
+                        On modern browsers (Chrome, Edge, Firefox 130+, Safari 16.4+ including iOS) the app exports
+                        MP4 (H.264) video, which plays everywhere and can be shared directly to social media.
+                        Older browsers fall back to WebM format.
                       </div>
                     </div>
 
                     <div className="faq-item">
                       <div className="faq-question">Why is video export slow?</div>
                       <div className="faq-answer">
-                        Video export uses a two-phase process: first pre-rendering all frames (which can take several
-                        minutes for high-resolution videos), then playing them back at the correct frame rate. Higher
-                        resolutions (like 4K), longer durations, and enabled "Zoom to Track" significantly increase
-                        export time. For faster exports, try lower resolutions or shorter durations.
+                        Each video frame is rendered with fully loaded map tiles, which means the app may wait for
+                        tiles to download (especially with "Zoom to Track" enabled, where the view changes every frame).
+                        Higher resolutions (like 4K), longer durations, and "Zoom to Track" significantly increase
+                        export time. For faster exports, try lower resolutions, shorter durations, or disabling
+                        "Zoom to Track".
                       </div>
                     </div>
 
