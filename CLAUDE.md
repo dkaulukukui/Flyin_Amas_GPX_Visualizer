@@ -15,7 +15,7 @@ Flyin Amas GPX Track Animator is a **single-file web application** (`index.html`
 The entire application is contained in `index.html` with this organization:
 
 1. **HTML Head**
-   - External dependencies via CDN (React 18, Leaflet 1.9.4, Babel Standalone, FFmpeg.wasm, mp4-muxer)
+   - External dependencies via CDN (React 18, Leaflet 1.9.4, Babel Standalone, mp4-muxer)
    - Embedded CSS styles for entire application
    - All styles use consistent color scheme: `#fc4c02` (primary orange), `#2d2d2d` (dark backgrounds)
 
@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 2.6.0 (as of last update)
+   - Current version: 3.0.0 (as of last update)
 
 ### Key Technical Patterns
 
@@ -89,9 +89,20 @@ effect, `renderExportFrame`, and `drawTracksDirect` — change animation behavio
 **Animation Loop**:
 - Uses `requestAnimationFrame` for smooth rendering
 - **Preview pacing matches export exactly**: `progressIncrement = (deltaTime / (exportDuration * 1000)) * 100`
-- `exportDuration` is computed from playback speed: `clamp(60 / speed, 10, 60)` seconds
-  (60s at 1x, 30s at 2x, 12s at 5x; speeds below 1x are capped by the 60s max)
+- `exportDuration` is a direct user input (v3.0.0): Duration number field, 5-300s, default 60s
 - Controlled by `isPlayingRef` to avoid stale closure issues
+
+**Track trimming (v3.0.0)**:
+- `tracks` keeps the original uploaded points; per-track `trimStart`/`trimEnd` indices are set by
+  the ✂ Trim sliders in the track list
+- `effectiveTracks` (useMemo) applies the trim and recomputes startTime/endTime/duration —
+  **all** animation, alignment, zoom, stats, and export logic consumes `effectiveTracks`, never
+  `tracks` directly (UI lists and labels still use `tracks`)
+
+**Example tracks (v3.0.0)**:
+- `examples/Kai.gpx` and `examples/Kimo.gpx` are fetched on startup and loaded with
+  `isExample: true`; `handleFileUpload` filters them out as soon as the user uploads their own files
+- `.gitignore` excludes `*.gpx` but exempts `examples/*.gpx`
 
 **Visual Elements**:
 - Full track preview (dimmed, togglable): Shows complete path at 30% opacity
@@ -126,7 +137,7 @@ Why this is the preferred path:
    decode via `createImageBitmap`, draw, call `videoTrack.requestFrame()`, and wait until the exact
    target wall-clock time
 3. MediaRecorder is started **only** for Phase 2 (critical for correct duration)
-4. FFmpeg.wasm FPS correction is applied if the encoded duration is off by >10%
+4. Duration diagnostics are logged to the console (FFmpeg.wasm correction was removed in v3.0.0)
 
 If neither path is available (very old iOS), an alert with screen-recording instructions is shown.
 
@@ -150,7 +161,7 @@ All state managed through React useState/useRef hooks:
 
 **Component State** (useState):
 - `tracks`: Array of loaded GPX tracks
-- `isPlaying`, `progress`, `speed`: Animation controls
+- `isPlaying`, `progress`: Animation controls
 - `isRecording`, `isRendering`, `renderProgress`: Export state
 - `showAllTracks`, `showLabels`, `showLegend`: Display toggles
 - `animationStyle`: 'simultaneous' or 'sequential'
@@ -158,7 +169,9 @@ All state managed through React useState/useRef hooks:
 - `alignPoint`, `alignRadius`, `alignMethod`, `isPickingPoint`, `alignmentActive`: Track comparison/alignment
   (Leaflet circle + match markers are removed during export — preferCanvas would bake them into frames)
 - `exportAspectRatio`, `exportResolution`: Export settings
-- `exportDuration`: Video duration in seconds — auto-computed from speed (10-60s)
+- `exportDuration`: Video/preview duration in seconds — direct user input (5-300s, default 60)
+- `labelFont`, `labelSize`: Track label styling (preview + export)
+- `trimOpenId`: Track whose ✂ Trim sliders are expanded (trim values live on the track objects)
 - `exportFPS`: Target frame rate (15-60 FPS, default 30 FPS)
 - `exportQuality`: Video quality preset ('low', 'medium', 'high', 'ultra')
 - `exportFormat`: Current export format ('MP4', 'WebM (VP9)', 'WebM (VP8)')
@@ -170,7 +183,7 @@ All state managed through React useState/useRef hooks:
 - `isPlayingRef`: Synced with isPlaying for animation loop
 - `mediaRecorderRef`, `compositeCanvasRef`, `compositeStreamRef`: Export rendering
 - `renderCancelledRef`: Cancel signal for export (checked by both export paths)
-- `ffmpegRef`, `ffmpegLoadedRef`: FFmpeg.wasm (fallback path only)
+- `exportStartTimeRef`: Export start timestamp for the overlay ETA
 
 ## Development Workflow
 
@@ -219,14 +232,12 @@ Edit tile layer URLs (search for "ArcGIS" or "openstreetmap"):
 - **Must include** `crossOrigin: 'anonymous'` for video export
 
 ### Adjusting Animation
-- Default speed range: `0.1` to `5.0`
-- Speed slider step: `0.1`
 - Zoom levels: `12` to `18`
-- Video/preview duration: `clamp(60 / speed, 10, 60)` seconds (single source of truth for both)
+- Video/preview duration: Duration input, 5-300s (single source of truth for both)
 
 ### Video Export Settings
 User-configurable via UI:
-- **Duration**: auto-computed from playback speed (10-60s)
+- **Duration**: direct input, 5-300s (default 60s)
 - **FPS**: 15-60 FPS (default: 30 FPS)
 - **Quality**: Low, Medium, High, Ultra (affects bitrate)
 - **Resolution**: Multiple 16:9, 9:16 (vertical), and 4:3 presets (720p to 4K)
@@ -279,7 +290,7 @@ Primary brand color `#fc4c02` used for:
 **Video has wrong FPS or duration (fallback path only)**:
 - Verify MediaRecorder only starts during Phase 2 (look for "🔴 Recording started")
 - Check browser console for "Video Metadata Inspection" - should show correct FPS/duration
-- FFmpeg.wasm correction kicks in automatically if duration is off by >10%
+- A duration-mismatch warning is logged if the encoded duration is off by >10%
 
 **Video export produces 1KB corrupted file**:
 - Canvas is CORS-tainted from non-CORS images
@@ -319,7 +330,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 2.6.0**
+**Current Version: 3.0.0**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -341,6 +352,7 @@ No build process required - single HTML file is the entire app.
 - **v2.4.0**: WebCodecs single-pass MP4 export; RAM fix; preview/export speed match; security hardening
 - **v2.5.0**: 9:16 vertical export format (Reels/TikTok/Shorts)
 - **v2.6.0**: Track comparison - common-point alignment with radius circle, race-from-point playback
+- **v3.0.0**: Duration input replaces speed slider; example tracks; per-track trimming; label font/size; collapsible sidebar; export ETA + leave warning; FFmpeg.wasm removed
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which
