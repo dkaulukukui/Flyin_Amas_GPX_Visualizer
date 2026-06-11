@@ -9,7 +9,6 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
   <style>
     * {
@@ -451,6 +450,39 @@
     .leaflet-container.picking-point,
     .leaflet-container.picking-point .leaflet-interactive {
       cursor: crosshair !important;
+    }
+
+    .collapsible-section {
+      margin-bottom: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .collapsible-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.04);
+      font-weight: 600;
+      font-size: 13px;
+      color: #fc4c02;
+      user-select: none;
+    }
+
+    .collapsible-header:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .collapsible-chevron {
+      font-size: 11px;
+      color: #999;
+    }
+
+    .collapsible-body {
+      padding: 12px 12px 4px 12px;
     }
 
     .map-label {
@@ -1024,6 +1056,7 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.0.0 - MAJOR UI/UX update: video Duration input replaces the speed slider (default 60s, 5-300s, drives preview and export identically); bundled example tracks auto-load on startup and clear when the user uploads their own; per-track trimming (non-destructive start/end sliders); track label font and size controls; collapsible sidebar sections; export overlay shows estimated time remaining and warns against closing the tab (plus a browser leave-confirmation while exporting); removed the FFmpeg.wasm dependency (~30 MB, unused by the WebCodecs pipeline)
     // 2.6.0 - Track comparison: pick a common point on the map (with adjustable radius circle) and align tracks from different days to race from that point using real elapsed time. Match by closest point, first pass, or last pass through the circle. Tracks without a match are excluded with a warning. Also unifies visible-points logic across playback, zoom-follow, and both export paths (fixes sequential-mode mismatch in exported videos).
     // 2.5.0 - Add 9:16 vertical export format (Instagram Reels, TikTok, YouTube Shorts) with 720x1280, 1080x1920, and 2160x3840 resolution presets
     // 2.4.0 - MAJOR: WebCodecs single-pass MP4 export - frames are encoded directly to an in-memory MP4 as they render (no RAM frame storage, exact FPS/duration, MP4 output on Chrome/Edge/Firefox 130+/Safari 16.4+ including iOS and Android). MediaRecorder fallback now stores compressed WebP frames (~30x less RAM than raw ImageData). Preview playback speed now matches exported video exactly (both run for the computed export duration). Security hardening: HTML-escape track labels (XSS fix), validate GPX coordinates/timestamps, reject malformed XML, 50MB file size cap.
@@ -1083,7 +1116,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "2.6.0";
+    const APP_VERSION = "3.0.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -1111,14 +1144,29 @@
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
 
+    // Collapsible sidebar section with a clickable chevron header
+    function CollapsibleSection({ title, defaultOpen = true, children }) {
+      const [open, setOpen] = useState(defaultOpen);
+      return (
+        <div className="collapsible-section">
+          <div className="collapsible-header" onClick={() => setOpen(!open)}>
+            <span className="collapsible-chevron">{open ? '▾' : '▸'}</span>
+            <span>{title}</span>
+          </div>
+          {open && <div className="collapsible-body">{children}</div>}
+        </div>
+      );
+    }
+
     function GPXTrackAnimator() {
       const [tracks, setTracks] = useState([]);
       const [isPlaying, setIsPlaying] = useState(false);
       const [progress, setProgress] = useState(0);
-      const [speed, setSpeed] = useState(1);
       const [isRecording, setIsRecording] = useState(false);
       const [showAllTracks, setShowAllTracks] = useState(true);
       const [showLabels, setShowLabels] = useState(true);
+      const [labelFont, setLabelFont] = useState('Arial');
+      const [labelSize, setLabelSize] = useState(14); // px
       const [showLegend, setShowLegend] = useState(true);
       const [animationStyle, setAnimationStyle] = useState('simultaneous');
       const [zoomToTrack, setZoomToTrack] = useState(true);
@@ -1158,8 +1206,6 @@
       const originalBoundsRef = useRef(null);
       const lastTimestampRef = useRef(null);
       const isPlayingRef = useRef(isPlaying);
-      const ffmpegRef = useRef(null);
-      const ffmpegLoadedRef = useRef(false);
 
       // Update resolution when aspect ratio changes
       useEffect(() => {
@@ -1172,17 +1218,9 @@
         }
       }, [exportAspectRatio]);
 
-      // Video duration limits
-      const minVideoDuration = 10;
-      const maxVideoDuration = 60;
-
-      // Compute video duration from playback speed
-      // Faster speed = shorter video (base 60s at 1x speed)
-      useEffect(() => {
-        const computedDuration = Math.round(60 / speed);
-        const clampedDuration = Math.min(maxVideoDuration, Math.max(minVideoDuration, computedDuration));
-        setExportDuration(clampedDuration);
-      }, [speed]);
+      // Video duration limits (drives both preview pacing and export length)
+      const minVideoDuration = 5;
+      const maxVideoDuration = 300;
 
       useEffect(() => {
         // Initialize map
@@ -1327,13 +1365,16 @@
             }
 
             setTracks(prev => {
+              // The user's own uploads replace the bundled example tracks
+              const base = prev.filter(t => !t.isExample);
+
               // Auto-populate title with date from first track
-              if (prev.length === 0 && track.startTime && !videoTitle) {
+              if (base.length === 0 && track.startTime && !videoTitle) {
                 const date = new Date(track.startTime);
                 setVideoTitle(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
               }
 
-              return [...prev, track];
+              return [...base, track];
             });
 
             // Fit map to bounds
@@ -1388,11 +1429,59 @@
         ));
       };
 
+      const [trimOpenId, setTrimOpenId] = useState(null); // track whose trim sliders are expanded
+
+      const updateTrackTrim = (id, which, value) => {
+        setTracks(prev => prev.map(track => {
+          if (track.id !== id) return track;
+          const lastIdx = track.points.length - 1;
+          let trimStart = track.trimStart ?? 0;
+          let trimEnd = track.trimEnd ?? lastIdx;
+          if (which === 'start') {
+            trimStart = Math.max(0, Math.min(value, trimEnd - 1));
+          } else {
+            trimEnd = Math.min(lastIdx, Math.max(value, trimStart + 1));
+          }
+          return { ...track, trimStart, trimEnd };
+        }));
+      };
+
+      const resetTrackTrim = (id) => {
+        setTracks(prev => prev.map(track =>
+          track.id === id ? { ...track, trimStart: 0, trimEnd: track.points.length - 1 } : track
+        ));
+      };
+
+      // Apply per-track trim (non-destructive): slice points and recompute times.
+      // All animation, alignment, stats, and export logic consumes these; the
+      // original uploaded points stay intact on `tracks` so trims are reversible.
+      const effectiveTracks = useMemo(() => tracks.map(track => {
+        const lastIdx = track.points.length - 1;
+        const start = Math.max(0, Math.min(track.trimStart ?? 0, lastIdx));
+        const end = Math.max(start, Math.min(track.trimEnd ?? lastIdx, lastIdx));
+        if (start === 0 && end === lastIdx) return track;
+
+        const points = track.points.slice(start, end + 1);
+        let startTime = null;
+        let endTime = null;
+        let duration = null;
+        if (points.length > 0 && points[0].time) {
+          const trimmedStart = new Date(points[0].time);
+          const trimmedEnd = new Date(points[points.length - 1].time);
+          if (!isNaN(trimmedStart) && !isNaN(trimmedEnd)) {
+            startTime = trimmedStart;
+            endTime = trimmedEnd;
+            duration = endTime - startTime;
+          }
+        }
+        return { ...track, points, startTime, endTime, duration };
+      }), [tracks]);
+
       // For each track, the point matched inside the common-point circle (or null if none)
       const alignmentMatches = useMemo(() => {
         const result = {};
         if (!alignPoint) return result;
-        tracks.forEach(track => {
+        effectiveTracks.forEach(track => {
           let best = null;
           track.points.forEach((p, index) => {
             const distanceM = getDistance(p, { lat: alignPoint.lat, lon: alignPoint.lng }) * 1000;
@@ -1408,14 +1497,14 @@
           result[track.id] = best;
         });
         return result;
-      }, [tracks, alignPoint, alignRadius, alignMethod]);
+      }, [effectiveTracks, alignPoint, alignRadius, alignMethod]);
 
       // Race timing for aligned mode: longest remaining time (and point count)
       // among matched tracks, measured from each track's own crossing
       const alignedTiming = useMemo(() => {
         let spanMs = 0;
         let maxRemainingPoints = 0;
-        tracks.forEach(track => {
+        effectiveTracks.forEach(track => {
           const match = alignmentMatches[track.id];
           if (!match) return;
           maxRemainingPoints = Math.max(maxRemainingPoints, track.points.length - 1 - match.index);
@@ -1425,7 +1514,7 @@
           }
         });
         return { spanMs, maxRemainingPoints };
-      }, [tracks, alignmentMatches]);
+      }, [effectiveTracks, alignmentMatches]);
 
       // Compute which points of a track are visible at the given progress.
       // Single source of truth shared by browser playback, zoom-follow, and
@@ -1462,10 +1551,10 @@
         }
 
         if (animationStyle === 'sequential') {
-          const trackIndex = tracks.findIndex(t => t.id === track.id);
-          const tracksBeforeThis = tracks.slice(0, trackIndex);
+          const trackIndex = effectiveTracks.findIndex(t => t.id === track.id);
+          const tracksBeforeThis = effectiveTracks.slice(0, trackIndex);
           const totalPointsBefore = tracksBeforeThis.reduce((sum, t) => sum + t.points.length, 0);
-          const totalPoints = tracks.reduce((sum, t) => sum + t.points.length, 0);
+          const totalPoints = effectiveTracks.reduce((sum, t) => sum + t.points.length, 0);
           const currentTotalPoint = Math.floor((progressPercent / 100) * totalPoints);
           const pointsForThisTrack = Math.max(0, currentTotalPoint - totalPointsBefore);
           return track.points.slice(0, Math.min(pointsForThisTrack, track.points.length));
@@ -1473,7 +1562,7 @@
 
         // Simultaneous - use absolute time-based synchronization if available
         if (track.duration && track.startTime) {
-          const tracksWithTime = tracks.filter(t => t.startTime && t.endTime);
+          const tracksWithTime = effectiveTracks.filter(t => t.startTime && t.endTime);
           const earliestStart = Math.min(...tracksWithTime.map(t => t.startTime.getTime()));
           const latestEnd = Math.max(...tracksWithTime.map(t => t.endTime.getTime()));
           const totalTimeSpan = latestEnd - earliestStart;
@@ -1549,7 +1638,54 @@
           }
           lastTimestampRef.current = null;
         }
-      }, [isPlaying, speed, exportDuration]);
+      }, [isPlaying, exportDuration]);
+
+      // Preload bundled example tracks so first-time visitors see the app working.
+      // They are cleared automatically as soon as the user uploads their own files.
+      useEffect(() => {
+        const exampleFiles = ['example/Koa_example.gpx', 'example/Nalu_example.gpx'];
+        let cancelled = false;
+
+        (async () => {
+          const loaded = [];
+          for (const path of exampleFiles) {
+            try {
+              const resp = await fetch(path);
+              if (!resp.ok) continue;
+              const text = await resp.text();
+              const track = parseGPX(text, path.split('/').pop());
+              if (track && track.points.length > 0) {
+                track.isExample = true;
+                loaded.push(track);
+              }
+            } catch (e) {
+              // Examples unavailable (offline, file://) - just start empty
+            }
+          }
+
+          if (cancelled || loaded.length === 0) return;
+
+          setTracks(prev => (prev.length > 0 ? prev : loaded)); // never clobber user uploads
+
+          const allPoints = loaded.flatMap(t => t.points.map(p => [p.lat, p.lon]));
+          if (allPoints.length > 0 && mapInstanceRef.current) {
+            mapInstanceRef.current.fitBounds(L.latLngBounds(allPoints), { padding: [50, 50] });
+          }
+        })();
+
+        return () => { cancelled = true; };
+      }, []);
+
+      // Warn before leaving the page while a video export is in progress
+      useEffect(() => {
+        if (!isRendering) return;
+        const handler = (e) => {
+          e.preventDefault();
+          e.returnValue = '';
+        };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+      }, [isRendering]);
 
       // Common-point picking: while active, clicking the map sets the point
       useEffect(() => {
@@ -1588,7 +1724,7 @@
         }).addTo(map);
         alignLayersRef.current.push(circle);
 
-        tracks.forEach(track => {
+        effectiveTracks.forEach(track => {
           const match = alignmentMatches[track.id];
           if (!match) return;
           const p = track.points[match.index];
@@ -1600,9 +1736,9 @@
           }).addTo(map);
           alignLayersRef.current.push(marker);
         });
-      }, [alignPoint, alignRadius, alignmentMatches, tracks, isRendering]);
+      }, [alignPoint, alignRadius, alignmentMatches, effectiveTracks, isRendering]);
 
-      const alignedMatchCount = tracks.filter(t => alignmentMatches[t.id]).length;
+      const alignedMatchCount = effectiveTracks.filter(t => alignmentMatches[t.id]).length;
 
       const applyAlignment = () => {
         setAlignmentActive(true);
@@ -1621,14 +1757,14 @@
       useEffect(() => {
         if (tracks.length > 0 && mapInstanceRef.current) {
           const allPoints = [];
-          tracks.forEach(track => {
+          effectiveTracks.forEach(track => {
             allPoints.push(...track.points.map(p => [p.lat, p.lon]));
           });
           if (allPoints.length > 0) {
             originalBoundsRef.current = L.latLngBounds(allPoints);
           }
         }
-      }, [tracks]);
+      }, [effectiveTracks]);
 
       useEffect(() => {
         // Clear existing polylines
@@ -1645,7 +1781,7 @@
         // so the user can see the overlaid tracks to click on
         const forcePreview = isPickingPoint || (alignPoint && !alignmentActive);
 
-        tracks.forEach((track, trackIndex) => {
+        effectiveTracks.forEach((track, trackIndex) => {
           const visiblePoints = getVisiblePoints(track, progress);
 
           if (showAllTracks || forcePreview) {
@@ -1680,7 +1816,7 @@
             if (track.label && showLabels) {
               const labelIcon = L.divIcon({
                 className: 'map-label',
-                html: `<div class="map-label" style="color: ${escapeHtml(track.color)}">${escapeHtml(track.label)}</div>`,
+                html: `<div class="map-label" style="color: ${escapeHtml(track.color)}; font-size: ${labelSize}px; font-family: ${escapeHtml(labelFont)}, sans-serif">${escapeHtml(track.label)}</div>`,
                 iconSize: null,
                 iconAnchor: [-15, 10]
               });
@@ -1692,7 +1828,7 @@
             }
           }
         });
-      }, [tracks, progress, showAllTracks, showLabels, animationStyle, alignmentActive, alignmentMatches, alignPoint, isPickingPoint]);
+      }, [effectiveTracks, progress, showAllTracks, showLabels, labelFont, labelSize, animationStyle, alignmentActive, alignmentMatches, alignPoint, isPickingPoint]);
 
       // Separate effect for zoom-to-track to prevent interruption during animation
       useEffect(() => {
@@ -1703,8 +1839,8 @@
           // Collect current positions (either from all tracks or just the centered track)
           const currentPositions = [];
           const tracksToFollow = centeredTrackId
-            ? tracks.filter(t => t.id == centeredTrackId) // Use == to handle string/number comparison
-            : tracks;
+            ? effectiveTracks.filter(t => t.id == centeredTrackId) // Use == to handle string/number comparison
+            : effectiveTracks;
 
           tracksToFollow.forEach((track) => {
             const visiblePoints = getVisiblePoints(track, progress);
@@ -1732,7 +1868,7 @@
             });
           }
         }
-      }, [tracks, progress, animationStyle, zoomToTrack, zoomLevel, centeredTrackId, alignmentActive, alignmentMatches]);
+      }, [effectiveTracks, progress, animationStyle, zoomToTrack, zoomLevel, centeredTrackId, alignmentActive, alignmentMatches]);
 
       const togglePlay = () => {
         if (tracks.length === 0) return;
@@ -1808,6 +1944,7 @@
       };
 
       const compositeCanvasRef = useRef(null);
+      const exportStartTimeRef = useRef(null); // for the ETA shown in the rendering overlay
       const compositeStreamRef = useRef(null);
       const isRecordingRef = useRef(false);
       const renderCancelledRef = useRef(false);
@@ -2026,13 +2163,13 @@
             const labelOffsetX = rect.left - currentMapRect.left;
             const labelOffsetY = rect.top - currentMapRect.top;
 
-            ctx.font = '700 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.font = `700 ${labelSize}px ${labelFont}, sans-serif`;
             ctx.fillStyle = color;
             ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
             ctx.lineWidth = 4;
             ctx.lineJoin = 'round';
-            ctx.strokeText(text, labelOffsetX, labelOffsetY + 14);
-            ctx.fillText(text, labelOffsetX, labelOffsetY + 14);
+            ctx.strokeText(text, labelOffsetX, labelOffsetY + labelSize);
+            ctx.fillText(text, labelOffsetX, labelOffsetY + labelSize);
           } catch (e) {
             console.warn('Could not draw label:', e);
           }
@@ -2171,87 +2308,6 @@
         ctx.restore();
       };
 
-      // Load FFmpeg.wasm for video FPS correction
-      const loadFFmpeg = async () => {
-        if (ffmpegLoadedRef.current) {
-          return ffmpegRef.current;
-        }
-
-        try {
-          console.log('Loading FFmpeg.wasm...');
-          const { createFFmpeg } = FFmpeg;
-
-          const ffmpeg = createFFmpeg({
-            log: true,
-            corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
-          });
-
-          await ffmpeg.load();
-
-          ffmpegRef.current = ffmpeg;
-          ffmpegLoadedRef.current = true;
-          console.log('✓ FFmpeg.wasm loaded successfully');
-          return ffmpeg;
-        } catch (err) {
-          console.error('Failed to load FFmpeg.wasm:', err);
-          return null;
-        }
-      };
-
-      // Correct video FPS using FFmpeg
-      const correctVideoFPS = async (inputBlob, targetFPS, mimeType) => {
-        try {
-          console.log('\n=== FFmpeg FPS Correction ===');
-          console.log(`Correcting video to ${targetFPS} FPS...`);
-
-          const ffmpeg = await loadFFmpeg();
-          if (!ffmpeg) {
-            console.error('FFmpeg not available, skipping FPS correction');
-            return inputBlob;
-          }
-
-          const { fetchFile } = FFmpeg;
-
-          // Write input file to FFmpeg virtual filesystem
-          const inputExt = mimeType.includes('mp4') ? 'mp4' : 'webm';
-          const outputExt = inputExt;
-
-          ffmpeg.FS('writeFile', `input.${inputExt}`, await fetchFile(inputBlob));
-
-          // Run FFmpeg to change FPS
-          // -i input: input file
-          // -filter:v fps=30: set output frame rate to 30 FPS
-          // -c:v libvpx-vp9 (for webm) or libx264 (for mp4): video codec
-          const codec = outputExt === 'mp4' ? 'libx264' : 'libvpx-vp9';
-          await ffmpeg.run(
-            '-i', `input.${inputExt}`,
-            '-filter:v', `fps=${targetFPS}`,
-            '-c:v', codec,
-            '-preset', 'fast',
-            '-crf', '22',
-            `output.${outputExt}`
-          );
-
-          // Read output file
-          const data = ffmpeg.FS('readFile', `output.${outputExt}`);
-
-          // Clean up FFmpeg filesystem
-          ffmpeg.FS('unlink', `input.${inputExt}`);
-          ffmpeg.FS('unlink', `output.${outputExt}`);
-
-          // Convert to Blob
-          const correctedBlob = new Blob([data.buffer], { type: mimeType });
-          console.log('✓ FPS correction complete');
-          console.log('=============================\n');
-
-          return correctedBlob;
-        } catch (err) {
-          console.error('FFmpeg FPS correction failed:', err);
-          console.log('Falling back to original video');
-          return inputBlob;
-        }
-      };
-
       // Restore the on-screen map to its pre-export size
       const restoreMapSize = (mapContainer) => {
         if (originalMapSizeRef.current) {
@@ -2301,11 +2357,11 @@
         let zoomChanged = false;
 
         // Apply zoom-to-track for this frame if enabled
-        if (zoomToTrack && progressValue > 0 && progressValue < 100 && mapInstanceRef.current && tracks.length > 0) {
+        if (zoomToTrack && progressValue > 0 && progressValue < 100 && mapInstanceRef.current && effectiveTracks.length > 0) {
           const currentPositions = [];
           const tracksToFollow = centeredTrackId
-            ? tracks.filter(t => t.id == centeredTrackId) // Use == to handle string/number comparison
-            : tracks;
+            ? effectiveTracks.filter(t => t.id == centeredTrackId) // Use == to handle string/number comparison
+            : effectiveTracks;
 
           tracksToFollow.forEach((track) => {
             const visiblePoints = getVisiblePoints(track, progressValue);
@@ -2335,7 +2391,7 @@
           }
         } else if (progressValue === 0 || progressValue >= 100) {
           // Zoom out to show all tracks at start/end
-          if (tracks.length > 0 && originalBoundsRef.current && mapInstanceRef.current) {
+          if (effectiveTracks.length > 0 && originalBoundsRef.current && mapInstanceRef.current) {
             mapInstanceRef.current.fitBounds(originalBoundsRef.current, {
               padding: [50, 50],
               animate: false
@@ -2358,7 +2414,7 @@
         }
 
         // Render frame to canvas
-        captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, 0, 0, 1, exportWidth, exportHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, tracks, legendPosition, progressValue, animationStyle, mapInstanceRef.current, showAllTracks);
+        captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, 0, 0, 1, exportWidth, exportHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, effectiveTracks, legendPosition, progressValue, animationStyle, mapInstanceRef.current, showAllTracks);
       };
 
       // Find a supported H.264 encoder configuration for WebCodecs MP4 export.
@@ -2556,6 +2612,7 @@
             setExportFormat('MP4');
             setIsRendering(true);
             setRenderProgress(0);
+            exportStartTimeRef.current = Date.now();
             setIsRecording(true);
             isRecordingRef.current = true;
             renderCancelledRef.current = false;
@@ -2720,7 +2777,6 @@
 
             // DIAGNOSTIC: Inspect video metadata to measure actual encoded FPS
             console.log('\n=== Video Metadata Inspection ===');
-            let needsFPSCorrection = false;
             try {
               const blobUrl = URL.createObjectURL(blob);
               const videoElement = document.createElement('video');
@@ -2741,9 +2797,7 @@
                   if (Math.abs(durationRatio - 1.0) > 0.1) {
                     console.warn(`⚠️  VIDEO DURATION MISMATCH DETECTED`);
                     console.warn(`Expected ${expectedDuration}s but got ${actualDuration.toFixed(2)}s`);
-                    console.warn(`The browser's MediaRecorder is encoding at ~${actualFPS.toFixed(1)} FPS instead of ${expectedFPS} FPS`);
-                    console.warn(`\nApplying automatic FPS correction with FFmpeg.wasm...`);
-                    needsFPSCorrection = true;
+                    console.warn(`The browser's MediaRecorder encoded at ~${actualFPS.toFixed(1)} FPS instead of ${expectedFPS} FPS`);
                   } else {
                     console.log('✓ Video duration matches expected (within 10% tolerance)');
                   }
@@ -2765,73 +2819,7 @@
             }
             console.log('=================================\n');
 
-            // Apply FPS correction if needed
-            if (needsFPSCorrection) {
-              blob = await correctVideoFPS(blob, targetFPS, mimeType);
-
-              // Verify correction worked
-              console.log('\n=== Verifying FPS Correction ===');
-              try {
-                const blobUrl = URL.createObjectURL(blob);
-                const videoElement = document.createElement('video');
-
-                await new Promise((resolve, reject) => {
-                  videoElement.onloadedmetadata = () => {
-                    const correctedDuration = videoElement.duration;
-                    const correctedFPS = totalFrames / correctedDuration;
-                    console.log(`Corrected video: ${correctedDuration.toFixed(2)}s duration`);
-                    console.log(`Corrected FPS: ${correctedFPS.toFixed(2)} FPS`);
-
-                    if (Math.abs(correctedDuration - exportDuration) < exportDuration * 0.1) {
-                      console.log('✓ FPS correction successful!');
-                    } else {
-                      console.warn('⚠️  Correction may not be perfect, but should be improved');
-                    }
-
-                    URL.revokeObjectURL(blobUrl);
-                    resolve();
-                  };
-
-                  videoElement.onerror = (e) => {
-                    URL.revokeObjectURL(blobUrl);
-                    reject(e);
-                  };
-
-                  videoElement.src = blobUrl;
-                });
-              } catch (err) {
-                console.error('Verification failed:', err);
-              }
-              console.log('=================================\n');
-            }
-
-            // OPTION 5 (SERVER-SIDE CONVERSION) - Future Implementation:
-            // If you want to always provide MP4 output regardless of browser:
-            // 1. Upload blob to server endpoint: POST /api/convert-video with FormData
-            // 2. Server uses FFmpeg to convert WebM → MP4 (takes ~5-10 seconds)
-            // 3. Return MP4 download URL or stream MP4 directly
-            // 4. User downloads MP4 file
-            //
-            // Server-side conversion provides:
-            // - Universal MP4 output for all users
-            // - Fast conversion (server CPU vs browser)
-            // - No client-side overhead (no 30MB FFmpeg.wasm library)
-            //
-            // Requires:
-            // - Backend server (Node.js + Express, Python + Flask, etc.)
-            // - FFmpeg installed on server
-            // - Cloud hosting (Vercel, Netlify Functions, AWS Lambda with FFmpeg layer)
-            // - Cannot use GitHub Pages (static only)
-            //
-            // Example server endpoint (Node.js):
-            // app.post('/api/convert-video', async (req, res) => {
-            //   const inputFile = req.files.video;
-            //   const outputFile = `output-${Date.now()}.mp4`;
-            //   await execPromise(`ffmpeg -i ${inputFile} -c:v libx264 -preset fast -crf 22 ${outputFile}`);
-            //   res.download(outputFile);
-            // });
-
-            // Current approach: Direct download (client-side recording)
+            // Direct download (client-side recording)
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -2859,6 +2847,7 @@
           setIsRecording(false); // Not recording yet
           setIsRendering(true);
           setRenderProgress(0);
+          exportStartTimeRef.current = Date.now();
           isRecordingRef.current = false;
           renderCancelledRef.current = false;
 
@@ -2913,6 +2902,7 @@
 
           // PHASE 2: Play back frames at correct FPS
           const playbackStartTime = Date.now();
+          exportStartTimeRef.current = playbackStartTime; // restart ETA for the realtime phase
           const playbackInterval = frameDuration; // Exact interval for target FPS
 
           // Pipeline frame decoding: decode the next frame during the wait for
@@ -3015,8 +3005,8 @@
         compositeCanvasRef.current = null;
       };
 
-      const totalPoints = tracks.reduce((sum, t) => sum + t.points.length, 0);
-      const totalDistance = tracks.reduce((sum, track) => {
+      const totalPoints = effectiveTracks.reduce((sum, t) => sum + t.points.length, 0);
+      const totalDistance = effectiveTracks.reduce((sum, track) => {
         let dist = 0;
         for (let i = 1; i < track.points.length; i++) {
           const p1 = track.points[i - 1];
@@ -3087,6 +3077,11 @@
                       <div className="track-header">
                         <span className="track-name" style={{ color: track.color }}>
                           {track.name}
+                          {track.isExample && (
+                            <span style={{ fontSize: '10px', color: '#999', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '4px', padding: '1px 5px', marginLeft: '6px', verticalAlign: 'middle' }}>
+                              example
+                            </span>
+                          )}
                         </span>
                         <button 
                           className="track-remove"
@@ -3109,7 +3104,60 @@
                           value={track.color}
                           onChange={(e) => updateTrackColor(track.id, e.target.value)}
                         />
+                        <button
+                          className="btn btn-secondary"
+                          style={{ fontSize: '11px', padding: '3px 8px', marginLeft: 'auto' }}
+                          onClick={() => setTrimOpenId(trimOpenId === track.id ? null : track.id)}
+                        >
+                          ✂ Trim
+                        </button>
                       </div>
+                      {trimOpenId === track.id && (() => {
+                        const lastIdx = track.points.length - 1;
+                        const trimStart = track.trimStart ?? 0;
+                        const trimEnd = track.trimEnd ?? lastIdx;
+                        const kept = trimEnd - trimStart + 1;
+                        return (
+                          <div style={{ marginTop: '8px', padding: '8px', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: '6px' }}>
+                            <label style={{ fontSize: '11px', color: '#999', display: 'block', marginBottom: '2px' }}>
+                              Trim start: point {trimStart}
+                            </label>
+                            <input
+                              type="range"
+                              className="slider"
+                              min="0"
+                              max={lastIdx}
+                              step="1"
+                              value={trimStart}
+                              onChange={(e) => updateTrackTrim(track.id, 'start', parseInt(e.target.value, 10))}
+                            />
+                            <label style={{ fontSize: '11px', color: '#999', display: 'block', margin: '6px 0 2px' }}>
+                              Trim end: point {trimEnd}
+                            </label>
+                            <input
+                              type="range"
+                              className="slider"
+                              min="0"
+                              max={lastIdx}
+                              step="1"
+                              value={trimEnd}
+                              onChange={(e) => updateTrackTrim(track.id, 'end', parseInt(e.target.value, 10))}
+                            />
+                            <div style={{ fontSize: '11px', color: '#ccc', marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span>Keeping {kept.toLocaleString()} of {track.points.length.toLocaleString()} points</span>
+                              {(trimStart > 0 || trimEnd < lastIdx) && (
+                                <button
+                                  className="btn btn-secondary"
+                                  style={{ fontSize: '11px', padding: '2px 8px' }}
+                                  onClick={() => resetTrackTrim(track.id)}
+                                >
+                                  Reset
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>
@@ -3118,8 +3166,8 @@
               {tracks.length > 0 && (
                 <>
                   <div className="controls">
+                    <CollapsibleSection title="Playback">
                     <div className="control-group">
-                      <div className="control-label">Playback</div>
                       <div className="button-group">
                         <button 
                           className="btn btn-primary"
@@ -3148,16 +3196,27 @@
                     </div>
                     
                     <div className="control-group">
-                      <div className="control-label">Speed: {speed.toFixed(1)}x</div>
+                      <div className="control-label">Duration: {exportDuration}s</div>
                       <input
-                        type="range"
-                        className="slider"
-                        min="0.1"
-                        max="5"
-                        step="0.1"
-                        value={speed}
-                        onChange={(e) => setSpeed(parseFloat(e.target.value))}
+                        type="number"
+                        className="select"
+                        min={minVideoDuration}
+                        max={maxVideoDuration}
+                        step="5"
+                        value={exportDuration}
+                        onChange={(e) => {
+                          const v = parseInt(e.target.value, 10);
+                          if (!isNaN(v)) setExportDuration(v);
+                        }}
+                        onBlur={(e) => {
+                          const v = parseInt(e.target.value, 10);
+                          setExportDuration(isNaN(v) ? 60 : Math.min(maxVideoDuration, Math.max(minVideoDuration, v)));
+                        }}
+                        disabled={isRecording}
                       />
+                      <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
+                        Length of the animation and exported video, in seconds ({minVideoDuration}-{maxVideoDuration}s).
+                      </p>
                     </div>
                     
                     <div className="control-group">
@@ -3177,10 +3236,11 @@
                         </p>
                       )}
                     </div>
+                    </CollapsibleSection>
 
                     {tracks.length >= 2 && (
+                      <CollapsibleSection title="🏁 Compare Tracks">
                       <div className="control-group">
-                        <div className="control-label">🏁 Compare Tracks</div>
                         {alignmentActive && (
                           <div style={{ fontSize: '12px', color: '#fc4c02', fontWeight: 600, marginBottom: '8px' }}>
                             Aligned — racing from common point
@@ -3267,8 +3327,10 @@
                           </>
                         )}
                       </div>
+                      </CollapsibleSection>
                     )}
 
+                    <CollapsibleSection title="Display Options">
                     <div className="control-group">
                       <label className="checkbox-group">
                         <input
@@ -3292,6 +3354,37 @@
                         <span>Show track labels</span>
                       </label>
                     </div>
+
+                    {showLabels && (
+                      <div style={{ marginBottom: '12px', marginLeft: '24px' }}>
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Label Font</label>
+                        <select
+                          className="select"
+                          value={labelFont}
+                          onChange={(e) => setLabelFont(e.target.value)}
+                          disabled={isRecording}
+                          style={{ marginBottom: '8px' }}
+                        >
+                          <option value="Arial">Arial</option>
+                          <option value="Helvetica">Helvetica</option>
+                          <option value="Georgia">Georgia</option>
+                          <option value="Times New Roman">Times New Roman</option>
+                          <option value="Courier New">Courier New</option>
+                          <option value="Verdana">Verdana</option>
+                        </select>
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Label Size: {labelSize}px</label>
+                        <input
+                          type="range"
+                          className="slider"
+                          min="10"
+                          max="32"
+                          step="1"
+                          value={labelSize}
+                          onChange={(e) => setLabelSize(parseInt(e.target.value, 10))}
+                          disabled={isRecording}
+                        />
+                      </div>
+                    )}
 
                     <div className="control-group">
                       <label className="checkbox-group">
@@ -3372,11 +3465,12 @@
                         </div>
                       </>
                     )}
+                    </CollapsibleSection>
                   </div>
-                  
+
                   <div className="controls">
+                    <CollapsibleSection title="Export Settings">
                     <div className="control-group">
-                      <div className="control-label">Export Settings</div>
                       <div style={{ marginBottom: '12px' }}>
                         <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Aspect Ratio</label>
                         <select
@@ -3448,7 +3542,7 @@
                       </div>
                       <div style={{ marginBottom: '12px', padding: '10px', backgroundColor: 'rgba(252, 76, 2, 0.1)', borderRadius: '6px', border: '1px solid rgba(252, 76, 2, 0.3)' }}>
                         <label style={{ fontSize: '12px', color: '#ccc', display: 'block', marginBottom: '4px' }}>
-                          Video Duration (based on {speed}x speed)
+                          Video Duration
                         </label>
                         <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#fc4c02' }}>
                           {exportDuration}s
@@ -3457,11 +3551,15 @@
                           </span>
                         </div>
                         <div style={{ fontSize: '10px', color: '#666', marginTop: '4px' }}>
-                          Adjust playback speed to change video duration
+                          Set with the Duration control under Playback
                         </div>
                       </div>
 
-                      <div className="control-label" style={{ marginTop: '20px' }}>Video Title</div>
+                    </div>
+                    </CollapsibleSection>
+
+                    <CollapsibleSection title="Video Title" defaultOpen={false}>
+                    <div className="control-group">
                       <div style={{ marginBottom: '12px' }}>
                         <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Title Text</label>
                         <input
@@ -3530,6 +3628,10 @@
                         />
                       </div>
 
+                    </div>
+                    </CollapsibleSection>
+
+                    <div className="control-group">
                       <button
                         className="btn btn-primary"
                         onClick={isRecording ? stopRecording : startRecording}
@@ -3569,12 +3671,12 @@
                         </span>
                       </div>
                     )}
-                    {!alignmentActive && animationStyle === 'simultaneous' && tracks.some(t => t.startTime) && (
+                    {!alignmentActive && animationStyle === 'simultaneous' && effectiveTracks.some(t => t.startTime) && (
                       <div className="stat-row">
                         <span className="stat-label">Time Range:</span>
                         <span className="stat-value">
                           {(() => {
-                            const tracksWithTime = tracks.filter(t => t.startTime && t.endTime);
+                            const tracksWithTime = effectiveTracks.filter(t => t.startTime && t.endTime);
                             if (tracksWithTime.length === 0) return 'N/A';
                             const earliestStart = new Date(Math.min(...tracksWithTime.map(t => t.startTime.getTime())));
                             const latestEnd = new Date(Math.max(...tracksWithTime.map(t => t.endTime.getTime())));
@@ -3583,12 +3685,12 @@
                         </span>
                       </div>
                     )}
-                    {!alignmentActive && animationStyle === 'simultaneous' && tracks.some(t => t.startTime) && progress > 0 && (
+                    {!alignmentActive && animationStyle === 'simultaneous' && effectiveTracks.some(t => t.startTime) && progress > 0 && (
                       <div className="stat-row">
                         <span className="stat-label">Current Time:</span>
                         <span className="stat-value">
                           {(() => {
-                            const tracksWithTime = tracks.filter(t => t.startTime && t.endTime);
+                            const tracksWithTime = effectiveTracks.filter(t => t.startTime && t.endTime);
                             if (tracksWithTime.length === 0) return 'N/A';
                             const earliestStart = Math.min(...tracksWithTime.map(t => t.startTime.getTime()));
                             const latestEnd = Math.max(...tracksWithTime.map(t => t.endTime.getTime()));
@@ -3622,6 +3724,21 @@
                     <div className="progress-text">{Math.round(renderProgress)}%</div>
                     <div className="progress-bar-container">
                       <div className="progress-bar-fill" style={{ width: `${renderProgress}%` }}></div>
+                    </div>
+                    {renderProgress > 2 && exportStartTimeRef.current && (
+                      <div style={{ fontSize: '13px', color: '#ccc', marginTop: '8px' }}>
+                        {(() => {
+                          const elapsed = Date.now() - exportStartTimeRef.current;
+                          const etaSec = Math.ceil((elapsed * (100 - renderProgress)) / renderProgress / 1000);
+                          const min = Math.floor(etaSec / 60);
+                          const sec = etaSec % 60;
+                          return `Estimated time remaining: ~${min}:${String(sec).padStart(2, '0')}`;
+                        })()}
+                      </div>
+                    )}
+                    <div style={{ fontSize: '12px', color: '#e0a800', marginTop: '8px', marginBottom: '8px' }}>
+                      ⚠️ Keep this tab open until the export finishes — closing or
+                      switching away can interrupt the recording.
                     </div>
                     <button className="btn btn-secondary" onClick={stopRecording}>
                       Cancel
@@ -3711,7 +3828,7 @@
                         <li>Animate single or multiple GPS tracks simultaneously</li>
                         <li>Customize track colors, labels, and appearance</li>
                         <li>Export high-quality videos (up to 4K resolution)</li>
-                        <li>Control animation speed, zoom, and playback style</li>
+                        <li>Control animation duration, zoom, and playback style</li>
                         <li>Add custom video titles and legends</li>
                         <li>Works entirely in your browser - no server upload required</li>
                       </ul>
@@ -3725,7 +3842,7 @@
                       <li><strong>Upload GPX files:</strong> Drag and drop your GPX files into the upload zone, or click to browse</li>
                       <li><strong>Customize tracks:</strong> Edit track labels, change colors, and adjust settings in the sidebar</li>
                       <li><strong>Preview animation:</strong> Click Play to see how your tracks will animate on the map</li>
-                      <li><strong>Adjust settings:</strong> Control animation speed, zoom level, and display options</li>
+                      <li><strong>Adjust settings:</strong> Set the duration, zoom level, label styling, and display options; trim tracks if needed</li>
                       <li><strong>Compare tracks (optional):</strong> With 2+ tracks loaded, use "🏁 Compare Tracks" to pick a common point on the map, adjust the radius circle, and align tracks from different days to race from that point</li>
                       <li><strong>Export video:</strong> Configure video settings (resolution, duration, FPS) and click "Export Video"</li>
                       <li><strong>Download:</strong> Wait for the export to complete, then download your animated video</li>

@@ -3,12 +3,24 @@
 A beautiful, interactive web application for visualizing and animating GPS tracks from GPX files. Perfect for showcasing Strava activities, outdoor adventures, or any GPS-recorded journey.
 
 ![GPX Track Animator](https://img.shields.io/badge/Status-Active-success)
-![Version](https://img.shields.io/badge/Version-2.6.0-blue)
+![Version](https://img.shields.io/badge/Version-3.0.0-blue)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
 > **⚠️ Disclaimer:** This code was generated with AI assistance. While thoroughly tested, users should review and verify the code before use in production environments.
 
-## What's New in v2.6.0
+## What's New in v3.0.0
+
+✨ **Major UI/UX Update**
+
+- ⏱️ **Duration Input**: Set the video length directly (5-300s, default 60s) — replaces the speed slider; preview and export always match
+- 🌺 **Example Tracks**: Two sample paddling tracks load automatically so you can try everything instantly; they clear as soon as you upload your own files
+- ✂️ **Track Trimming**: Per-track start/end sliders to cut out dock time, drives to the start line, or GPS noise — fully reversible
+- 🔤 **Label Styling**: Choose the font and size of track labels (in the preview and in exported videos)
+- ⏳ **Export ETA**: The export overlay shows estimated time remaining and warns you not to close the tab (with a browser confirmation if you try)
+- 📂 **Collapsible Settings**: Sidebar sections fold away so you can focus on what you're adjusting
+- 🪶 **Lighter App**: Removed the unused 30 MB FFmpeg.wasm dependency
+
+## Previous Update: v2.6.0
 
 🏁 **Track Comparison / Race Mode** - Compare tracks recorded on different days!
 
@@ -65,7 +77,10 @@ A beautiful, interactive web application for visualizing and animating GPS track
   - **Multiple Resolutions**: 720p to 4K in 16:9, 9:16 (vertical), or 4:3
   - **Custom Video Title**: Add text overlay with positioning and styling options
   - **Multiple Formats**: MP4, WebM (VP9), or WebM (VP8) depending on browser
-- **⚡ Speed Control** - Adjust playback speed from 0.1x to 5x
+- **⏱️ Duration Control** - Set the animation/video length directly (5-300 seconds)
+- **✂️ Track Trimming** - Cut unwanted points from the start or end of any track (reversible)
+- **🔤 Label Styling** - Pick the font and size of on-map track labels
+- **🌺 Example Tracks** - Bundled sample tracks load on startup and clear when you upload your own
 - **🔍 Zoom to Track** - Follow the action with adjustable zoom level (12-18)
 - **📈 Statistics** - View total distance, points, and time ranges
 
