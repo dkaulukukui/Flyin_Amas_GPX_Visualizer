@@ -18,10 +18,23 @@ To Do List:
 
 ## Remaining
 
-- Add feature for comparing two GPX tracks from different days: provide the option to pick a point and
-  then align them from that point. Maybe add this to a separate tab.
+- ~~Add feature for comparing two GPX tracks from different days~~ — Done in v2.6.0. "🏁 Compare Tracks"
+  sidebar section: pick a common point on the map, adjust the radius circle, match by closest/first/last
+  pass through the circle, then all tracks race from that point at their real recorded paces.
 - (complete) Test v2.4.0 export on real devices: iPhone (Safari 16.4+), Android Chrome, desktop Safari, Firefox.
 - Consider removing the FFmpeg.wasm dependency (~30 MB download) — it is only used by the legacy
   MediaRecorder fallback path for FPS correction, which most browsers no longer need.
 
 - (complete v2.5.0) Add 9:16 (vertical) aspect ratio for output.
+
+- adjust the speed to be a video duration input instead of a slider, default to 60s
+
+- preload the example files in example/, automatically clear the files when user uploads thier own
+
+- allow user to change the font and text size of the track labels
+
+- povide user with estimated time to complete when exporting. warn them not to close tab or exit until finished
+
+- make all the settings collapsable
+
+- provide the ability to trim tracks

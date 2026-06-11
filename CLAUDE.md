@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 2.5.0 (as of last update)
+   - Current version: 2.6.0 (as of last update)
 
 ### Key Technical Patterns
 
@@ -72,6 +72,19 @@ Two animation modes with different timestamp handling:
 **Sequential Mode**:
 - Plays tracks one after another in upload order
 - Each track uses full 0-100% progress range
+
+**Aligned Mode (Track Comparison, v2.6.0)**:
+- User picks a common point on the map (`alignPoint`) with a radius circle (`alignRadius`, meters)
+- `alignmentMatches` (useMemo) finds each track's match inside the circle by `alignMethod`:
+  `'closest'` (min distance), `'earliest'` (first pass), `'latest'` (last pass); no match → `null`
+- When `alignmentActive`, all matched tracks animate from their match point using **real elapsed
+  time from their own crossing** (`alignedTiming.spanMs` = longest remaining time); unmatched
+  tracks show only as dimmed preview; point-index pacing fallback for timestamp-less tracks
+- Overrides the animationStyle select (disabled while active)
+
+**Single source of truth**: `getVisiblePoints(track, progressPercent)` (component scope) computes
+visible points for all three modes and is used by the polyline render effect, the zoom-follow
+effect, `renderExportFrame`, and `drawTracksDirect` — change animation behavior ONLY there.
 
 **Animation Loop**:
 - Uses `requestAnimationFrame` for smooth rendering
@@ -142,6 +155,8 @@ All state managed through React useState/useRef hooks:
 - `showAllTracks`, `showLabels`, `showLegend`: Display toggles
 - `animationStyle`: 'simultaneous' or 'sequential'
 - `zoomToTrack`, `zoomLevel`, `centeredTrackId`: Zoom controls
+- `alignPoint`, `alignRadius`, `alignMethod`, `isPickingPoint`, `alignmentActive`: Track comparison/alignment
+  (Leaflet circle + match markers are removed during export — preferCanvas would bake them into frames)
 - `exportAspectRatio`, `exportResolution`: Export settings
 - `exportDuration`: Video duration in seconds — auto-computed from speed (10-60s)
 - `exportFPS`: Target frame rate (15-60 FPS, default 30 FPS)
@@ -304,7 +319,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 2.5.0**
+**Current Version: 2.6.0**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -325,6 +340,7 @@ No build process required - single HTML file is the entire app.
 - **v2.3.0**: captureStream(0) + manual requestFrame timing; duration computed from playback speed
 - **v2.4.0**: WebCodecs single-pass MP4 export; RAM fix; preview/export speed match; security hardening
 - **v2.5.0**: 9:16 vertical export format (Reels/TikTok/Shorts)
+- **v2.6.0**: Track comparison - common-point alignment with radius circle, race-from-point playback
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which
