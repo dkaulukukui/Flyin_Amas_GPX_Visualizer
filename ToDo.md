@@ -18,8 +18,9 @@ To Do List:
 
 ## Remaining
 
-- Add feature for comparing two GPX tracks from different days: provide the option to pick a point and
-  then align them from that point. Maybe add this to a separate tab.
+- ~~Add feature for comparing two GPX tracks from different days~~ — Done in v2.6.0. "🏁 Compare Tracks"
+  sidebar section: pick a common point on the map, adjust the radius circle, match by closest/first/last
+  pass through the circle, then all tracks race from that point at their real recorded paces.
 - (complete) Test v2.4.0 export on real devices: iPhone (Safari 16.4+), Android Chrome, desktop Safari, Firefox.
 - Consider removing the FFmpeg.wasm dependency (~30 MB download) — it is only used by the legacy
   MediaRecorder fallback path for FPS correction, which most browsers no longer need.

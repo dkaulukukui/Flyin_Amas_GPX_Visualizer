@@ -3,12 +3,22 @@
 A beautiful, interactive web application for visualizing and animating GPS tracks from GPX files. Perfect for showcasing Strava activities, outdoor adventures, or any GPS-recorded journey.
 
 ![GPX Track Animator](https://img.shields.io/badge/Status-Active-success)
-![Version](https://img.shields.io/badge/Version-2.5.0-blue)
+![Version](https://img.shields.io/badge/Version-2.6.0-blue)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
 > **⚠️ Disclaimer:** This code was generated with AI assistance. While thoroughly tested, users should review and verify the code before use in production environments.
 
-## What's New in v2.5.0
+## What's New in v2.6.0
+
+🏁 **Track Comparison / Race Mode** - Compare tracks recorded on different days!
+
+- 📍 **Common Point Alignment**: Click anywhere on the map to set a shared start point, with an adjustable radius circle
+- 🎯 **Flexible Matching**: Align each track by its closest point, first pass, or last pass through the circle
+- ⏱️ **True Race Replay**: Every track replays at its actual recorded pace from its crossing — see who was really faster
+- ⚠️ **Smart Feedback**: Live per-track match distances and warnings when a track has no point inside the circle
+- 🎥 **Works in Exports**: Aligned races export to video exactly as previewed
+
+## Previous Update: v2.5.0
 
 📱 **Vertical Video Export** - New 9:16 aspect ratio for Instagram Reels, TikTok, and YouTube Shorts (720x1280, 1080x1920, 2160x3840)
 
@@ -41,6 +51,7 @@ A beautiful, interactive web application for visualizing and animating GPS track
 - **📁 Upload Multiple GPX Files** - Drag and drop or browse to add tracks
 - **🗺️ Satellite Map View** - High-quality satellite imagery background with map tiles included in exports
 - **🎬 Simultaneous & Sequential Animation** - Play tracks together or one after another
+- **🏁 Track Comparison (Race Mode)** - Align tracks from different days at a common point and race them at their real recorded paces
 - **⏱️ Time-Synchronized Playback** - Tracks play according to actual timestamps
 - **🎨 Customizable Track Colors** - Choose colors for each track
 - **🏷️ Track Labels** - Add and edit labels for your tracks

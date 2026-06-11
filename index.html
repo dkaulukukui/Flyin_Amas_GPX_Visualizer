@@ -448,6 +448,11 @@
       white-space: nowrap;
     }
 
+    .leaflet-container.picking-point,
+    .leaflet-container.picking-point .leaflet-interactive {
+      cursor: crosshair !important;
+    }
+
     .map-label {
       color: white;
       font-size: 14px;
@@ -1015,10 +1020,11 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+    const { useState, useEffect, useRef, useMemo } = React;
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 2.6.0 - Track comparison: pick a common point on the map (with adjustable radius circle) and align tracks from different days to race from that point using real elapsed time. Match by closest point, first pass, or last pass through the circle. Tracks without a match are excluded with a warning. Also unifies visible-points logic across playback, zoom-follow, and both export paths (fixes sequential-mode mismatch in exported videos).
     // 2.5.0 - Add 9:16 vertical export format (Instagram Reels, TikTok, YouTube Shorts) with 720x1280, 1080x1920, and 2160x3840 resolution presets
     // 2.4.0 - MAJOR: WebCodecs single-pass MP4 export - frames are encoded directly to an in-memory MP4 as they render (no RAM frame storage, exact FPS/duration, MP4 output on Chrome/Edge/Firefox 130+/Safari 16.4+ including iOS and Android). MediaRecorder fallback now stores compressed WebP frames (~30x less RAM than raw ImageData). Preview playback speed now matches exported video exactly (both run for the computed export duration). Security hardening: HTML-escape track labels (XSS fix), validate GPX coordinates/timestamps, reject malformed XML, 50MB file size cap.
     // 2.3.0 - Fix jittery video export using captureStream(0) with manual requestFrame() for precise frame timing. Video duration now automatically computed from playback speed (60s at 1x, 30s at 2x, etc.)
@@ -1077,12 +1083,24 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "2.5.0";
+    const APP_VERSION = "2.6.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
     const INITIAL_MAP_CENTER = [21.284, -157.718];
     const INITIAL_MAP_ZOOM = 13;
+
+    // Haversine distance between two {lat, lon} points in kilometers
+    function getDistance(p1, p2) {
+      const R = 6371; // Earth's radius in km
+      const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+      const dLon = (p2.lon - p1.lon) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
 
     // Escape user-provided text before injecting into HTML strings (prevents XSS
     // via track labels, which come from filenames and user-editable inputs)
@@ -1123,6 +1141,13 @@
       const [isSidebarOpen, setIsSidebarOpen] = useState(false);
       const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
       const [centeredTrackId, setCenteredTrackId] = useState(null); // null = center on all tracks
+
+      // Track comparison / common-point alignment
+      const [alignPoint, setAlignPoint] = useState(null); // {lat, lng} picked on the map
+      const [alignRadius, setAlignRadius] = useState(50); // meters
+      const [alignMethod, setAlignMethod] = useState('closest'); // 'closest' | 'earliest' | 'latest'
+      const [isPickingPoint, setIsPickingPoint] = useState(false);
+      const [alignmentActive, setAlignmentActive] = useState(false);
 
       const mapRef = useRef(null);
       const mapInstanceRef = useRef(null);
@@ -1337,7 +1362,16 @@
       };
 
       const removeTrack = (id) => {
-        setTracks(prev => prev.filter(t => t.id !== id));
+        setTracks(prev => {
+          const next = prev.filter(t => t.id !== id);
+          // Comparison needs at least 2 tracks - reset alignment if we drop below
+          if (next.length < 2) {
+            setAlignmentActive(false);
+            setAlignPoint(null);
+            setIsPickingPoint(false);
+          }
+          return next;
+        });
         setProgress(0);
         setIsPlaying(false);
       };
@@ -1352,6 +1386,123 @@
         setTracks(prev => prev.map(track =>
           track.id === id ? { ...track, color: newColor } : track
         ));
+      };
+
+      // For each track, the point matched inside the common-point circle (or null if none)
+      const alignmentMatches = useMemo(() => {
+        const result = {};
+        if (!alignPoint) return result;
+        tracks.forEach(track => {
+          let best = null;
+          track.points.forEach((p, index) => {
+            const distanceM = getDistance(p, { lat: alignPoint.lat, lon: alignPoint.lng }) * 1000;
+            if (distanceM > alignRadius) return;
+            if (alignMethod === 'closest') {
+              if (!best || distanceM < best.distanceM) best = { index, distanceM };
+            } else if (alignMethod === 'earliest') {
+              if (!best) best = { index, distanceM }; // first pass through the circle
+            } else {
+              best = { index, distanceM }; // 'latest': last pass through the circle
+            }
+          });
+          result[track.id] = best;
+        });
+        return result;
+      }, [tracks, alignPoint, alignRadius, alignMethod]);
+
+      // Race timing for aligned mode: longest remaining time (and point count)
+      // among matched tracks, measured from each track's own crossing
+      const alignedTiming = useMemo(() => {
+        let spanMs = 0;
+        let maxRemainingPoints = 0;
+        tracks.forEach(track => {
+          const match = alignmentMatches[track.id];
+          if (!match) return;
+          maxRemainingPoints = Math.max(maxRemainingPoints, track.points.length - 1 - match.index);
+          const alignTime = track.points[match.index].time ? new Date(track.points[match.index].time).getTime() : NaN;
+          if (!isNaN(alignTime) && track.endTime) {
+            spanMs = Math.max(spanMs, track.endTime.getTime() - alignTime);
+          }
+        });
+        return { spanMs, maxRemainingPoints };
+      }, [tracks, alignmentMatches]);
+
+      // Compute which points of a track are visible at the given progress.
+      // Single source of truth shared by browser playback, zoom-follow, and
+      // both video export paths.
+      const getVisiblePoints = (track, progressPercent) => {
+        // Aligned mode: race all matched tracks from the common point using
+        // real elapsed time from each track's own crossing
+        if (alignmentActive) {
+          const match = alignmentMatches[track.id];
+          if (!match) return []; // no point within radius - excluded from the race
+          const alignIdx = match.index;
+
+          const alignPointTime = track.points[alignIdx].time ? new Date(track.points[alignIdx].time).getTime() : NaN;
+          if (alignedTiming.spanMs > 0 && !isNaN(alignPointTime)) {
+            const tau = (progressPercent / 100) * alignedTiming.spanMs;
+            let lastIndex = alignIdx;
+            for (let i = alignIdx + 1; i < track.points.length; i++) {
+              if (track.points[i].time) {
+                const elapsed = new Date(track.points[i].time).getTime() - alignPointTime;
+                if (elapsed <= tau) {
+                  lastIndex = i;
+                } else {
+                  break;
+                }
+              }
+            }
+            return track.points.slice(alignIdx, lastIndex + 1);
+          }
+
+          // No usable timestamps - pace by point index instead
+          const count = Math.floor((progressPercent / 100) * alignedTiming.maxRemainingPoints);
+          const lastIndex = Math.min(alignIdx + count, track.points.length - 1);
+          return track.points.slice(alignIdx, lastIndex + 1);
+        }
+
+        if (animationStyle === 'sequential') {
+          const trackIndex = tracks.findIndex(t => t.id === track.id);
+          const tracksBeforeThis = tracks.slice(0, trackIndex);
+          const totalPointsBefore = tracksBeforeThis.reduce((sum, t) => sum + t.points.length, 0);
+          const totalPoints = tracks.reduce((sum, t) => sum + t.points.length, 0);
+          const currentTotalPoint = Math.floor((progressPercent / 100) * totalPoints);
+          const pointsForThisTrack = Math.max(0, currentTotalPoint - totalPointsBefore);
+          return track.points.slice(0, Math.min(pointsForThisTrack, track.points.length));
+        }
+
+        // Simultaneous - use absolute time-based synchronization if available
+        if (track.duration && track.startTime) {
+          const tracksWithTime = tracks.filter(t => t.startTime && t.endTime);
+          const earliestStart = Math.min(...tracksWithTime.map(t => t.startTime.getTime()));
+          const latestEnd = Math.max(...tracksWithTime.map(t => t.endTime.getTime()));
+          const totalTimeSpan = latestEnd - earliestStart;
+
+          const currentAbsoluteTime = earliestStart + (progressPercent / 100) * totalTimeSpan;
+
+          if (currentAbsoluteTime < track.startTime.getTime()) {
+            return [];
+          }
+
+          let pointIndex = 0;
+          for (let i = 0; i < track.points.length; i++) {
+            if (track.points[i].time) {
+              const pointTime = new Date(track.points[i].time);
+
+              if (pointTime.getTime() <= currentAbsoluteTime) {
+                pointIndex = i;
+              } else {
+                break;
+              }
+            }
+          }
+
+          return track.points.slice(0, pointIndex + 1);
+        }
+
+        // Fallback to percentage-based if no time data
+        const pointCount = Math.floor((progressPercent / 100) * track.points.length);
+        return track.points.slice(0, pointCount);
       };
 
       const animate = (timestamp) => {
@@ -1400,6 +1551,72 @@
         }
       }, [isPlaying, speed, exportDuration]);
 
+      // Common-point picking: while active, clicking the map sets the point
+      useEffect(() => {
+        if (!isPickingPoint || !mapInstanceRef.current) return;
+        const map = mapInstanceRef.current;
+        map.getContainer().classList.add('picking-point');
+        const onMapClick = (e) => {
+          setAlignPoint({ lat: e.latlng.lat, lng: e.latlng.lng });
+          setIsPickingPoint(false);
+        };
+        map.on('click', onMapClick);
+        return () => {
+          map.off('click', onMapClick);
+          map.getContainer().classList.remove('picking-point');
+        };
+      }, [isPickingPoint]);
+
+      // Draw the common-point circle and per-track match markers.
+      // Removed while rendering video: with preferCanvas these layers would
+      // otherwise be baked into the exported frames.
+      const alignLayersRef = useRef([]);
+      useEffect(() => {
+        const map = mapInstanceRef.current;
+        if (!map) return;
+        alignLayersRef.current.forEach(layer => map.removeLayer(layer));
+        alignLayersRef.current = [];
+        if (!alignPoint || isRendering) return;
+
+        const circle = L.circle([alignPoint.lat, alignPoint.lng], {
+          radius: alignRadius,
+          color: '#fc4c02',
+          weight: 2,
+          dashArray: '6 6',
+          fillColor: '#fc4c02',
+          fillOpacity: 0.08
+        }).addTo(map);
+        alignLayersRef.current.push(circle);
+
+        tracks.forEach(track => {
+          const match = alignmentMatches[track.id];
+          if (!match) return;
+          const p = track.points[match.index];
+          const marker = L.circleMarker([p.lat, p.lon], {
+            radius: 9,
+            color: track.color,
+            weight: 3,
+            fill: false
+          }).addTo(map);
+          alignLayersRef.current.push(marker);
+        });
+      }, [alignPoint, alignRadius, alignmentMatches, tracks, isRendering]);
+
+      const alignedMatchCount = tracks.filter(t => alignmentMatches[t.id]).length;
+
+      const applyAlignment = () => {
+        setAlignmentActive(true);
+        setIsPlaying(false);
+        setProgress(0);
+      };
+
+      const clearAlignment = () => {
+        setAlignmentActive(false);
+        setIsPickingPoint(false);
+        setAlignPoint(null);
+        setProgress(0);
+      };
+
       // Store original bounds when tracks change
       useEffect(() => {
         if (tracks.length > 0 && mapInstanceRef.current) {
@@ -1424,58 +1641,14 @@
         
         if (!mapInstanceRef.current || tracks.length === 0) return;
         
+        // While picking/configuring the common point, always show full previews
+        // so the user can see the overlaid tracks to click on
+        const forcePreview = isPickingPoint || (alignPoint && !alignmentActive);
+
         tracks.forEach((track, trackIndex) => {
-          let visiblePoints;
+          const visiblePoints = getVisiblePoints(track, progress);
 
-          if (animationStyle === 'sequential') {
-            const tracksBeforeThis = tracks.slice(0, trackIndex);
-            const totalPointsBefore = tracksBeforeThis.reduce((sum, t) => sum + t.points.length, 0);
-            const totalPoints = tracks.reduce((sum, t) => sum + t.points.length, 0);
-
-            const currentTotalPoint = Math.floor((progress / 100) * totalPoints);
-            const pointsForThisTrack = Math.max(0, currentTotalPoint - totalPointsBefore);
-
-            visiblePoints = track.points.slice(0, Math.min(pointsForThisTrack, track.points.length));
-          } else {
-            // Simultaneous - use absolute time-based synchronization if available
-            if (track.duration && track.startTime) {
-              // Find the earliest start time and latest end time among all tracks
-              const tracksWithTime = tracks.filter(t => t.startTime && t.endTime);
-              const earliestStart = Math.min(...tracksWithTime.map(t => t.startTime.getTime()));
-              const latestEnd = Math.max(...tracksWithTime.map(t => t.endTime.getTime()));
-              const totalTimeSpan = latestEnd - earliestStart;
-
-              // Calculate current absolute time based on progress
-              const currentAbsoluteTime = earliestStart + (progress / 100) * totalTimeSpan;
-
-              // Check if this track has started yet
-              if (currentAbsoluteTime < track.startTime.getTime()) {
-                visiblePoints = [];
-              } else {
-                // Find the point index that corresponds to this absolute time
-                let pointIndex = 0;
-                for (let i = 0; i < track.points.length; i++) {
-                  if (track.points[i].time) {
-                    const pointTime = new Date(track.points[i].time);
-
-                    if (pointTime.getTime() <= currentAbsoluteTime) {
-                      pointIndex = i;
-                    } else {
-                      break;
-                    }
-                  }
-                }
-
-                visiblePoints = track.points.slice(0, pointIndex + 1);
-              }
-            } else {
-              // Fallback to percentage-based if no time data
-              const pointCount = Math.floor((progress / 100) * track.points.length);
-              visiblePoints = track.points.slice(0, pointCount);
-            }
-          }
-          
-          if (showAllTracks) {
+          if (showAllTracks || forcePreview) {
             // Show full track preview with track color at reduced opacity
             const fullLine = L.polyline(
               track.points.map(p => [p.lat, p.lon]),
@@ -1519,7 +1692,7 @@
             }
           }
         });
-      }, [tracks, progress, showAllTracks, showLabels, animationStyle]);
+      }, [tracks, progress, showAllTracks, showLabels, animationStyle, alignmentActive, alignmentMatches, alignPoint, isPickingPoint]);
 
       // Separate effect for zoom-to-track to prevent interruption during animation
       useEffect(() => {
@@ -1534,50 +1707,7 @@
             : tracks;
 
           tracksToFollow.forEach((track) => {
-            // Find the actual index of this track in the original tracks array
-            const trackIndex = tracks.findIndex(t => t.id === track.id);
-            let visiblePoints;
-
-            if (animationStyle === 'sequential') {
-              const tracksBeforeThis = tracks.slice(0, trackIndex);
-              const totalPointsBefore = tracksBeforeThis.reduce((sum, t) => sum + t.points.length, 0);
-              const totalPoints = tracks.reduce((sum, t) => sum + t.points.length, 0);
-              const currentTotalPoint = Math.floor((progress / 100) * totalPoints);
-              const pointsForThisTrack = Math.max(0, currentTotalPoint - totalPointsBefore);
-              visiblePoints = track.points.slice(0, Math.min(pointsForThisTrack, track.points.length));
-            } else {
-              // Simultaneous - use absolute time-based synchronization if available
-              if (track.duration && track.startTime) {
-                const tracksWithTime = tracks.filter(t => t.startTime && t.endTime);
-                const earliestStart = Math.min(...tracksWithTime.map(t => t.startTime.getTime()));
-                const latestEnd = Math.max(...tracksWithTime.map(t => t.endTime.getTime()));
-                const totalTimeSpan = latestEnd - earliestStart;
-
-                const currentAbsoluteTime = earliestStart + (progress / 100) * totalTimeSpan;
-
-                if (currentAbsoluteTime < track.startTime.getTime()) {
-                  visiblePoints = [];
-                } else {
-                  let pointIndex = 0;
-                  for (let i = 0; i < track.points.length; i++) {
-                    if (track.points[i].time) {
-                      const pointTime = new Date(track.points[i].time);
-
-                      if (pointTime.getTime() <= currentAbsoluteTime) {
-                        pointIndex = i;
-                      } else {
-                        break;
-                      }
-                    }
-                  }
-
-                  visiblePoints = track.points.slice(0, pointIndex + 1);
-                }
-              } else {
-                const pointCount = Math.floor((progress / 100) * track.points.length);
-                visiblePoints = track.points.slice(0, pointCount);
-              }
-            }
+            const visiblePoints = getVisiblePoints(track, progress);
 
             if (visiblePoints.length > 0) {
               const lastPoint = visiblePoints[visiblePoints.length - 1];
@@ -1602,7 +1732,7 @@
             });
           }
         }
-      }, [tracks, progress, animationStyle, zoomToTrack, zoomLevel, centeredTrackId]);
+      }, [tracks, progress, animationStyle, zoomToTrack, zoomLevel, centeredTrackId, alignmentActive, alignmentMatches]);
 
       const togglePlay = () => {
         if (tracks.length === 0) return;
@@ -1755,32 +1885,8 @@
             ctx.globalAlpha = 1.0; // Reset opacity
           }
 
-          // Calculate which points to show based on progress and animation style
-          let pointsToShow = [];
-
-          if (animStyle === 'simultaneous' && track.startTime && track.endTime) {
-            // Simultaneous mode: show based on absolute time
-            const allTracks = tracks.filter(t => t.startTime && t.endTime);
-            if (allTracks.length > 0) {
-              const earliestStart = Math.min(...allTracks.map(t => t.startTime.getTime()));
-              const latestEnd = Math.max(...allTracks.map(t => t.endTime.getTime()));
-              const currentTime = earliestStart + (latestEnd - earliestStart) * (progressPercent / 100);
-
-              // Show all points up to current time
-              pointsToShow = track.points.filter(p => {
-                if (!p.time) return true;
-                return new Date(p.time).getTime() <= currentTime;
-              });
-            } else {
-              // No time data, show proportionally
-              const numPoints = Math.floor((track.points.length * progressPercent) / 100);
-              pointsToShow = track.points.slice(0, numPoints);
-            }
-          } else {
-            // Sequential mode: show track proportionally
-            const numPoints = Math.floor((track.points.length * progressPercent) / 100);
-            pointsToShow = track.points.slice(0, numPoints);
-          }
+          // Calculate which points to show - same logic as browser playback
+          const pointsToShow = getVisiblePoints(track, progressPercent);
 
           if (pointsToShow.length < 2) return; // Need at least 2 points for a line
 
@@ -2202,50 +2308,7 @@
             : tracks;
 
           tracksToFollow.forEach((track) => {
-            // Find the actual index of this track in the original tracks array
-            const trackIndex = tracks.findIndex(t => t.id === track.id);
-            let visiblePoints;
-
-            if (animationStyle === 'sequential') {
-              const tracksBeforeThis = tracks.slice(0, trackIndex);
-              const totalPointsBefore = tracksBeforeThis.reduce((sum, t) => sum + t.points.length, 0);
-              const totalPoints = tracks.reduce((sum, t) => sum + t.points.length, 0);
-              const currentTotalPoint = Math.floor((progressValue / 100) * totalPoints);
-              const pointsForThisTrack = Math.max(0, currentTotalPoint - totalPointsBefore);
-              visiblePoints = track.points.slice(0, Math.min(pointsForThisTrack, track.points.length));
-            } else {
-              // Simultaneous - use absolute time-based synchronization if available
-              if (track.duration && track.startTime) {
-                const tracksWithTime = tracks.filter(t => t.startTime && t.endTime);
-                const earliestStart = Math.min(...tracksWithTime.map(t => t.startTime.getTime()));
-                const latestEnd = Math.max(...tracksWithTime.map(t => t.endTime.getTime()));
-                const totalTimeSpan = latestEnd - earliestStart;
-
-                const currentAbsoluteTime = earliestStart + (progressValue / 100) * totalTimeSpan;
-
-                if (currentAbsoluteTime < track.startTime.getTime()) {
-                  visiblePoints = [];
-                } else {
-                  let pointIndex = 0;
-                  for (let i = 0; i < track.points.length; i++) {
-                    if (track.points[i].time) {
-                      const pointTime = new Date(track.points[i].time);
-
-                      if (pointTime.getTime() <= currentAbsoluteTime) {
-                        pointIndex = i;
-                      } else {
-                        break;
-                      }
-                    }
-                  }
-
-                  visiblePoints = track.points.slice(0, pointIndex + 1);
-                }
-              } else {
-                const pointCount = Math.floor((progressValue / 100) * track.points.length);
-                visiblePoints = track.points.slice(0, pointCount);
-              }
-            }
+            const visiblePoints = getVisiblePoints(track, progressValue);
 
             if (visiblePoints.length > 0) {
               const lastPoint = visiblePoints[visiblePoints.length - 1];
@@ -2963,17 +3026,6 @@
         return sum + dist;
       }, 0);
 
-      function getDistance(p1, p2) {
-        const R = 6371; // Earth's radius in km
-        const dLat = (p2.lat - p1.lat) * Math.PI / 180;
-        const dLon = (p2.lon - p1.lon) * Math.PI / 180;
-        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-          Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) *
-          Math.sin(dLon / 2) * Math.sin(dLon / 2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return R * c;
-      }
-
       return (
         <>
           {/* Hamburger Menu Button (Mobile Only) */}
@@ -3110,16 +3162,113 @@
                     
                     <div className="control-group">
                       <div className="control-label">Animation Style</div>
-                      <select 
+                      <select
                         className="select"
                         value={animationStyle}
                         onChange={(e) => setAnimationStyle(e.target.value)}
+                        disabled={alignmentActive}
                       >
                         <option value="sequential">Sequential (one after another)</option>
                         <option value="simultaneous">Simultaneous (all at once)</option>
                       </select>
+                      {alignmentActive && (
+                        <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
+                          Overridden while tracks are aligned at a common point.
+                        </p>
+                      )}
                     </div>
-                    
+
+                    {tracks.length >= 2 && (
+                      <div className="control-group">
+                        <div className="control-label">🏁 Compare Tracks</div>
+                        {alignmentActive && (
+                          <div style={{ fontSize: '12px', color: '#fc4c02', fontWeight: 600, marginBottom: '8px' }}>
+                            Aligned — racing from common point
+                          </div>
+                        )}
+                        <button
+                          className={`btn ${isPickingPoint ? 'btn-primary' : 'btn-secondary'}`}
+                          onClick={() => setIsPickingPoint(!isPickingPoint)}
+                          disabled={isRecording || isRendering}
+                          style={{ marginBottom: '8px' }}
+                        >
+                          {isPickingPoint ? '✕ Cancel pick' : (alignPoint ? '📍 Move common point' : '📍 Pick common point')}
+                        </button>
+                        {isPickingPoint && (
+                          <p style={{ fontSize: '11px', color: '#999', marginBottom: '8px' }}>
+                            Click on the map where all tracks should be aligned.
+                          </p>
+                        )}
+                        {alignPoint && (
+                          <>
+                            <div style={{ marginBottom: '8px' }}>
+                              <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>
+                                Radius: {alignRadius} m
+                              </label>
+                              <input
+                                type="range"
+                                className="slider"
+                                min="5"
+                                max="500"
+                                step="5"
+                                value={alignRadius}
+                                onChange={(e) => setAlignRadius(parseInt(e.target.value, 10))}
+                                disabled={isRecording}
+                              />
+                            </div>
+                            <div style={{ marginBottom: '8px' }}>
+                              <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Align each track using</label>
+                              <select
+                                className="select"
+                                value={alignMethod}
+                                onChange={(e) => setAlignMethod(e.target.value)}
+                                disabled={isRecording}
+                              >
+                                <option value="closest">Closest point in circle</option>
+                                <option value="earliest">First pass through circle</option>
+                                <option value="latest">Last pass through circle</option>
+                              </select>
+                            </div>
+                            <div style={{ marginBottom: '8px' }}>
+                              {tracks.map(track => {
+                                const match = alignmentMatches[track.id];
+                                return (
+                                  <div key={track.id} style={{ fontSize: '12px', marginBottom: '2px', color: match ? '#ccc' : '#e0a800' }}>
+                                    <span style={{ display: 'inline-block', width: '10px', height: '10px', backgroundColor: track.color, borderRadius: '2px', marginRight: '6px' }}></span>
+                                    {match
+                                      ? `✓ ${track.label || 'Track'} — ${match.distanceM.toFixed(0)} m from point`
+                                      : `⚠ ${track.label || 'Track'}: no point within radius`}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {!alignmentActive && (
+                              <button
+                                className="btn btn-primary"
+                                onClick={applyAlignment}
+                                disabled={alignedMatchCount < 2 || isRecording || isRendering}
+                                style={{ marginBottom: '8px' }}
+                              >
+                                ✓ Apply Alignment
+                              </button>
+                            )}
+                            <button
+                              className="btn btn-secondary"
+                              onClick={clearAlignment}
+                              disabled={isRecording || isRendering}
+                            >
+                              ✕ Clear
+                            </button>
+                            {alignedMatchCount < 2 && (
+                              <p style={{ fontSize: '11px', color: '#999', marginTop: '6px' }}>
+                                At least 2 tracks need a point inside the circle. Enlarge the radius or move the point.
+                              </p>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+
                     <div className="control-group">
                       <label className="checkbox-group">
                         <input
@@ -3407,7 +3556,20 @@
                       <span className="stat-label">Tracks Loaded:</span>
                       <span className="stat-value">{tracks.length}</span>
                     </div>
-                    {animationStyle === 'simultaneous' && tracks.some(t => t.startTime) && (
+                    {alignmentActive && alignedTiming.spanMs > 0 && (
+                      <div className="stat-row">
+                        <span className="stat-label">Race Time:</span>
+                        <span className="stat-value">
+                          {(() => {
+                            const totalSec = Math.floor(((progress / 100) * alignedTiming.spanMs) / 1000);
+                            const min = Math.floor(totalSec / 60);
+                            const sec = totalSec % 60;
+                            return `${min}:${String(sec).padStart(2, '0')}`;
+                          })()}
+                        </span>
+                      </div>
+                    )}
+                    {!alignmentActive && animationStyle === 'simultaneous' && tracks.some(t => t.startTime) && (
                       <div className="stat-row">
                         <span className="stat-label">Time Range:</span>
                         <span className="stat-value">
@@ -3421,7 +3583,7 @@
                         </span>
                       </div>
                     )}
-                    {animationStyle === 'simultaneous' && tracks.some(t => t.startTime) && progress > 0 && (
+                    {!alignmentActive && animationStyle === 'simultaneous' && tracks.some(t => t.startTime) && progress > 0 && (
                       <div className="stat-row">
                         <span className="stat-label">Current Time:</span>
                         <span className="stat-value">
@@ -3564,6 +3726,7 @@
                       <li><strong>Customize tracks:</strong> Edit track labels, change colors, and adjust settings in the sidebar</li>
                       <li><strong>Preview animation:</strong> Click Play to see how your tracks will animate on the map</li>
                       <li><strong>Adjust settings:</strong> Control animation speed, zoom level, and display options</li>
+                      <li><strong>Compare tracks (optional):</strong> With 2+ tracks loaded, use "🏁 Compare Tracks" to pick a common point on the map, adjust the radius circle, and align tracks from different days to race from that point</li>
                       <li><strong>Export video:</strong> Configure video settings (resolution, duration, FPS) and click "Export Video"</li>
                       <li><strong>Download:</strong> Wait for the export to complete, then download your animated video</li>
                     </ol>
@@ -3610,6 +3773,18 @@
                         On modern browsers (Chrome, Edge, Firefox 130+, Safari 16.4+ including iOS) the app exports
                         MP4 (H.264) video, which plays everywhere and can be shared directly to social media.
                         Older browsers fall back to WebM format.
+                      </div>
+                    </div>
+
+                    <div className="faq-item">
+                      <div className="faq-question">How do I compare tracks recorded on different days?</div>
+                      <div className="faq-answer">
+                        Tracks from different days don't overlap in time, so "Simultaneous" mode can't race them.
+                        Instead, open "🏁 Compare Tracks" in the sidebar: click "Pick common point" and click the map
+                        where all tracks pass (e.g., a shared start line), adjust the radius circle so every track has
+                        a point inside it, choose how to match (closest point, first pass, or last pass through the
+                        circle), and click "Apply Alignment". All tracks will then animate from that point together,
+                        each replaying at its actual recorded pace - a true race. Exported videos use the same alignment.
                       </div>
                     </div>
 
