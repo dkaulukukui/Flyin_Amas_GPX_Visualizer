@@ -18,7 +18,7 @@ Thumbs.db
 # GPX files (user data - don't commit)
 *.gpx
 # ...except the bundled example tracks
-!example/*.gpx
+!examples/*.gpx
 
 # Video exports
 *.webm

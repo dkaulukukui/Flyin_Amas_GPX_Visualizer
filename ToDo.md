@@ -5,7 +5,7 @@ To Do List:
 - ~~adjust the speed to be a video duration input instead of a slider, default to 60s~~ — Done.
   Duration number input (5-300s, default 60s) drives both the preview and the exported video.
 - ~~preload the example files in example/, automatically clear the files when user uploads thier own~~ — Done.
-  `example/Koa_example.gpx` and `example/Nalu_example.gpx` load on startup (marked "example" in the
+  `examples/Kai.gpx` and `examples/Kimo.gpx` load on startup (marked "example" in the
   track list) and are removed automatically on the first user upload.
 - ~~allow user to change the font and text size of the track labels~~ — Done. Label Font and
   Label Size controls under "Show track labels"; applies to the preview and exported videos.

@@ -100,9 +100,9 @@ effect, `renderExportFrame`, and `drawTracksDirect` — change animation behavio
   `tracks` directly (UI lists and labels still use `tracks`)
 
 **Example tracks (v3.0.0)**:
-- `example/Koa_example.gpx` and `example/Nalu_example.gpx` are fetched on startup and loaded with
+- `examples/Kai.gpx` and `examples/Kimo.gpx` are fetched on startup and loaded with
   `isExample: true`; `handleFileUpload` filters them out as soon as the user uploads their own files
-- `.gitignore` excludes `*.gpx` but exempts `example/*.gpx`
+- `.gitignore` excludes `*.gpx` but exempts `examples/*.gpx`
 
 **Visual Elements**:
 - Full track preview (dimmed, togglable): Shows complete path at 30% opacity
