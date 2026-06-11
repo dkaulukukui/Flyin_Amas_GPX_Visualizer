@@ -26,3 +26,15 @@ To Do List:
   MediaRecorder fallback path for FPS correction, which most browsers no longer need.
 
 - (complete v2.5.0) Add 9:16 (vertical) aspect ratio for output.
+
+- adjust the speed to be a video duration input instead of a slider, default to 60s
+
+- preload the example files in example/, automatically clear the files when user uploads thier own
+
+- allow user to change the font and text size of the track labels
+
+- povide user with estimated time to complete when exporting. warn them not to close tab or exit until finished
+
+- make all the settings collapsable
+
+- provide the ability to trim tracks
