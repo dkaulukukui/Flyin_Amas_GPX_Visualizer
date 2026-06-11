@@ -1019,6 +1019,7 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 2.5.0 - Add 9:16 vertical export format (Instagram Reels, TikTok, YouTube Shorts) with 720x1280, 1080x1920, and 2160x3840 resolution presets
     // 2.4.0 - MAJOR: WebCodecs single-pass MP4 export - frames are encoded directly to an in-memory MP4 as they render (no RAM frame storage, exact FPS/duration, MP4 output on Chrome/Edge/Firefox 130+/Safari 16.4+ including iOS and Android). MediaRecorder fallback now stores compressed WebP frames (~30x less RAM than raw ImageData). Preview playback speed now matches exported video exactly (both run for the computed export duration). Security hardening: HTML-escape track labels (XSS fix), validate GPX coordinates/timestamps, reject malformed XML, 50MB file size cap.
     // 2.3.0 - Fix jittery video export using captureStream(0) with manual requestFrame() for precise frame timing. Video duration now automatically computed from playback speed (60s at 1x, 30s at 2x, etc.)
     // 2.2.1 - Add configurable initial map center (default: Oahu), auto-populate track labels from filename prefix before underscore (e.g., "Bob_track_1.gpx" → "Bob")
@@ -1076,7 +1077,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "2.4.0";
+    const APP_VERSION = "2.5.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -1139,6 +1140,8 @@
       useEffect(() => {
         if (exportAspectRatio === '16:9') {
           setExportResolution('1920x1080');
+        } else if (exportAspectRatio === '9:16') {
+          setExportResolution('1080x1920');
         } else if (exportAspectRatio === '4:3') {
           setExportResolution('1920x1440');
         }
@@ -3234,6 +3237,7 @@
                           disabled={isRecording}
                         >
                           <option value="16:9">16:9 (Widescreen)</option>
+                          <option value="9:16">9:16 (Vertical - Reels/TikTok/Shorts)</option>
                           <option value="4:3">4:3 (Standard)</option>
                         </select>
                       </div>
@@ -3250,6 +3254,12 @@
                               <option value="1920x1080">1920x1080 (Full HD)</option>
                               <option value="1280x720">1280x720 (HD)</option>
                               <option value="3840x2160">3840x2160 (4K)</option>
+                            </>
+                          ) : exportAspectRatio === '9:16' ? (
+                            <>
+                              <option value="1080x1920">1080x1920 (Full HD)</option>
+                              <option value="720x1280">720x1280 (HD)</option>
+                              <option value="2160x3840">2160x3840 (4K)</option>
                             </>
                           ) : (
                             <>

@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 2.4.0 (as of last update)
+   - Current version: 2.5.0 (as of last update)
 
 ### Key Technical Patterns
 
@@ -214,8 +214,8 @@ User-configurable via UI:
 - **Duration**: auto-computed from playback speed (10-60s)
 - **FPS**: 15-60 FPS (default: 30 FPS)
 - **Quality**: Low, Medium, High, Ultra (affects bitrate)
-- **Resolution**: Multiple 16:9 and 4:3 presets (720p to 4K)
-- **Aspect Ratio**: 16:9 or 4:3
+- **Resolution**: Multiple 16:9, 9:16 (vertical), and 4:3 presets (720p to 4K)
+- **Aspect Ratio**: 16:9, 9:16 (vertical - Reels/TikTok/Shorts), or 4:3
 
 Hardcoded timing values:
 - Tile wait after zoom change: 150ms + up to 2000ms for tile loading
@@ -304,7 +304,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 2.4.0**
+**Current Version: 2.5.0**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -324,6 +324,7 @@ No build process required - single HTML file is the entire app.
 - **v2.2.x**: Centered-track follow, configurable map center, label auto-naming
 - **v2.3.0**: captureStream(0) + manual requestFrame timing; duration computed from playback speed
 - **v2.4.0**: WebCodecs single-pass MP4 export; RAM fix; preview/export speed match; security hardening
+- **v2.5.0**: 9:16 vertical export format (Reels/TikTok/Shorts)
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which
