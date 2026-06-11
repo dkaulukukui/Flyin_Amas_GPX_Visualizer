@@ -1,0 +1,6 @@
+# Files in this repo that should NOT be uploaded/served as public site assets
+# (gitignore syntax, used by Cloudflare Workers static assets)
+*.md
+.claude/
+.gitignore
+wrangler.jsonc
