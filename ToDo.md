@@ -20,6 +20,8 @@ To Do List:
 
 - Add feature for comparing two GPX tracks from different days: provide the option to pick a point and
   then align them from that point. Maybe add this to a separate tab.
-- Test v2.4.0 export on real devices: iPhone (Safari 16.4+), Android Chrome, desktop Safari, Firefox.
+- (complete) Test v2.4.0 export on real devices: iPhone (Safari 16.4+), Android Chrome, desktop Safari, Firefox.
 - Consider removing the FFmpeg.wasm dependency (~30 MB download) — it is only used by the legacy
   MediaRecorder fallback path for FPS correction, which most browsers no longer need.
+
+- (complete v2.5.0) Add 9:16 (vertical) aspect ratio for output.

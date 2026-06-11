@@ -3,12 +3,16 @@
 A beautiful, interactive web application for visualizing and animating GPS tracks from GPX files. Perfect for showcasing Strava activities, outdoor adventures, or any GPS-recorded journey.
 
 ![GPX Track Animator](https://img.shields.io/badge/Status-Active-success)
-![Version](https://img.shields.io/badge/Version-2.4.0-blue)
+![Version](https://img.shields.io/badge/Version-2.5.0-blue)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
 > **⚠️ Disclaimer:** This code was generated with AI assistance. While thoroughly tested, users should review and verify the code before use in production environments.
 
-## What's New in v2.4.0
+## What's New in v2.5.0
+
+📱 **Vertical Video Export** - New 9:16 aspect ratio for Instagram Reels, TikTok, and YouTube Shorts (720x1280, 1080x1920, 2160x3840)
+
+## Previous Update: v2.4.0
 
 🎬 **MP4 Export Everywhere + Major Stability Overhaul**
 
@@ -47,7 +51,7 @@ A beautiful, interactive web application for visualizing and animating GPS track
   - **Duration Control**: 5-300 seconds (default: 60s)
   - **Frame Rate Control**: 15-60 FPS (default: 30 FPS)
   - **Quality Presets**: Low, Medium, High, Ultra
-  - **Multiple Resolutions**: 720p to 4K in 16:9 or 4:3
+  - **Multiple Resolutions**: 720p to 4K in 16:9, 9:16 (vertical), or 4:3
   - **Custom Video Title**: Add text overlay with positioning and styling options
   - **Multiple Formats**: MP4, WebM (VP9), or WebM (VP8) depending on browser
 - **⚡ Speed Control** - Adjust playback speed from 0.1x to 5x
@@ -86,7 +90,7 @@ The application uses a sophisticated two-phase export system to ensure perfect v
 - **Duration**: Set video length from 5 to 300 seconds (default: 60s)
 - **Frame Rate**: Choose FPS from 15 to 60 (default: 30 FPS for smooth motion)
 - **Quality**: Select from Low, Medium, High, or Ultra presets
-- **Resolution**: Multiple options from 720p to 4K in 16:9 or 4:3 aspect ratios
+- **Resolution**: Multiple options from 720p to 4K in 16:9, 9:16 (vertical), or 4:3 aspect ratios
 - **Video Title**: Add custom text overlay with positioning and styling
 - **Format**: MP4 (H.264) on modern browsers; WebM (VP9/VP8) fallback on older browsers
 
