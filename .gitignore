@@ -19,6 +19,7 @@ Thumbs.db
 *.gpx
 # ...except the bundled example tracks
 !examples/*.gpx
+.claude
 
 # Video exports
 *.webm
