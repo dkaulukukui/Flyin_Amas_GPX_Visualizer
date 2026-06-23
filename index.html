@@ -8,7 +8,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Pinned to Babel 7: @babel/standalone@8 defaults the in-browser transform to sourceType:"module",
+       which emits ESM into the injected classic <script> and breaks loading ("Cannot use import statement
+       outside a module"). Do NOT change to an unpinned/@8 URL. See v3.0.1 changelog. -->
+  <script crossorigin src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
   <style>
     * {
@@ -1056,6 +1059,10 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.0.1 - Fix blank-page load failure: pin @babel/standalone to 7.26.4. unpkg began resolving the unpinned
+    //         dependency URL to @babel/standalone@8.0.2, whose in-browser transformer defaults to sourceType:"module"
+    //         and emits ESM into the injected classic <script> tag ("Cannot use import statement outside a module"),
+    //         so React never mounted. No app code changed; the external dependency drifted.
     // 3.0.0 - MAJOR UI/UX update: video Duration input replaces the speed slider (default 60s, 5-300s, drives preview and export identically); bundled example tracks auto-load on startup and clear when the user uploads their own; per-track trimming (non-destructive start/end sliders); track label font and size controls; collapsible sidebar sections; export overlay shows estimated time remaining and warns against closing the tab (plus a browser leave-confirmation while exporting); removed the FFmpeg.wasm dependency (~30 MB, unused by the WebCodecs pipeline)
     // 2.6.0 - Track comparison: pick a common point on the map (with adjustable radius circle) and align tracks from different days to race from that point using real elapsed time. Match by closest point, first pass, or last pass through the circle. Tracks without a match are excluded with a warning. Also unifies visible-points logic across playback, zoom-follow, and both export paths (fixes sequential-mode mismatch in exported videos).
     // 2.5.0 - Add 9:16 vertical export format (Instagram Reels, TikTok, YouTube Shorts) with 720x1280, 1080x1920, and 2160x3840 resolution presets
@@ -1116,7 +1123,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.0.0";
+    const APP_VERSION = "3.0.1";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
