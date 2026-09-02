@@ -33,3 +33,7 @@ To Do List:
 ## Remaining
 
 (nothing queued — add new ideas here)
+- add smoothing or interpolation to tracks so that tracks arent jumpy
+- allow user in increase font size of legend
+- browser playback zoom level doesnt match exported video
+- should we adjust browser playback ascpect ratio to match output? sometimes its hard to see what the exportd video will look like this would fix that.
