@@ -353,6 +353,7 @@
     }
     
     .progress-bar {
+      position: relative;
       height: 8px;
       background: #555;
       border-radius: 4px;
@@ -360,6 +361,17 @@
       margin-top: 10px;
       cursor: pointer;
       transition: background 0.2s ease;
+    }
+
+    /* Where the scoreboard timer/distance start (set in Scoreboard & Stats) */
+    .stats-start-marker {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      margin-left: -1px;
+      background: #ffb347;
+      pointer-events: none;
     }
 
     .progress-bar:hover {
@@ -463,36 +475,15 @@
       pointer-events: none;
     }
 
-    /* Legend sizes are set inline from getLegendLayout() so the preview matches the export */
-    .map-legend {
+    /* Preview legend/scoreboard overlay (drawn by drawScoreboard, same as the export) */
+    .map-scoreboard {
       position: absolute;
-      background: rgba(45, 45, 45, 0.95);
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       z-index: 1000;
       pointer-events: none;
-    }
-
-    .legend-title {
-      color: #999;
-      text-transform: uppercase;
-      font-weight: 600;
-      white-space: nowrap;
-    }
-
-    .legend-item {
-      display: flex;
-      align-items: center;
-    }
-
-    .legend-color {
-      flex: none;
-    }
-
-    .legend-label {
-      color: white;
-      flex: 1;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
     }
 
     .leaflet-container.picking-point,
@@ -1093,6 +1084,13 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.4.0 - Scoreboard & stats: the legend becomes a scoreboard with a race timer (header), per-track Speed,
+    //         Distance, Heart Rate and Stroke Rate columns, and a Gap row between two chosen tracks. Stats come from
+    //         a registry (STAT_DEFINITIONS: race/track/pair scopes) so future stats are one entry; HR and cadence
+    //         are parsed from GPX <extensions>. Imperial (default) or Metric units; font/size/position shared by
+    //         the whole panel. "Set start here" sets where timer/distance start (timer counts down before it).
+    //         One drawScoreboard() canvas routine draws both the preview overlay and the export, so they match.
+    //         getVisiblePoints refactored onto getHeadState (verified output-identical).
     // 3.3.0 - Branding: "FlyinAmas" is the default video title while the example tracks are shown (replaced by the
     //         track date on the first upload unless the user typed a title). New watermark in the lower-right corner,
     //         "Made at Flyinamas.com" by default - on by default, with customizable text, size (default 12px) and
@@ -1176,7 +1174,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.3.0";
+    const APP_VERSION = "3.4.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -1301,6 +1299,107 @@
       };
     }
 
+    // ---------------------------------------------------------------------
+    // Scoreboard stats (v3.4.0)
+    // ---------------------------------------------------------------------
+
+    // Sensor fields copied from GPX <extensions> onto each point:
+    // point key -> element local names to look for (any namespace prefix)
+    const GPX_EXTENSION_FIELDS = {
+      hr: ['hr', 'heartrate'],
+      cad: ['cad', 'cadence']
+    };
+
+    const STAT_UNITS = {
+      imperial: { label: 'Imperial (mph, mi, ft)', speed: 'mph', mpsToSpeed: 2.2369363, distance: 'mi', mPerDistance: 1609.344, short: 'ft', mToShort: 3.2808399 },
+      metric: { label: 'Metric (km/h, km, m)', speed: 'km/h', mpsToSpeed: 3.6, distance: 'km', mPerDistance: 1000, short: 'm', mToShort: 1 }
+    };
+
+    // Speed is averaged over this much track time so GPS noise doesn't flicker it
+    const SPEED_WINDOW_MS = 10000;
+
+    const formatRaceTime = (ms) => {
+      const sign = ms < 0 ? '-' : '';
+      const totalSec = Math.floor(Math.abs(ms) / 1000);
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const sec = String(totalSec % 60).padStart(2, '0');
+      return h > 0 ? `${sign}${h}:${String(m).padStart(2, '0')}:${sec}` : `${sign}${m}:${sec}`;
+    };
+
+    // Short distances (gaps) in ft/m, switching to mi/km beyond 1000 ft/m
+    const formatShortDistance = (meters, units) => {
+      const u = STAT_UNITS[units];
+      const short = meters * u.mToShort;
+      return short < 1000
+        ? `${Math.round(short)} ${u.short}`
+        : `${(meters / u.mPerDistance).toFixed(2)} ${u.distance}`;
+    };
+
+    // Stats registry. Adding a stat (wave counter, flyin ama counter, ...) is one entry:
+    //   scope     'race'  - one value for the whole video (scoreboard header)
+    //             'track' - one value per track (a column on each track row)
+    //             'pair'  - one value for the two chosen tracks (footer row)
+    //   compute   (ctx) => number | null (null shows as a dash). ctx is built by
+    //             computeScoreboardStats: race: { elapsedMs }; track: { distanceM,
+    //             speedMps(), field(key) }; pair: { distanceM }
+    //   format    (value, units) => display text
+    //   template  (units) => widest expected text; fixes the column width so the
+    //             scoreboard doesn't change size every frame
+    //   requires  optional point field (see GPX_EXTENSION_FIELDS) - the stat is
+    //             unavailable unless some track has that data
+    //   short     column/row caption shown in the scoreboard where needed
+    const STAT_DEFINITIONS = [
+      {
+        id: 'timer', label: 'Timer', short: 'TIME', scope: 'race',
+        compute: (c) => c.elapsedMs,
+        format: (v) => formatRaceTime(v),
+        template: () => '-0:00:00'
+      },
+      {
+        id: 'speed', label: 'Speed', scope: 'track',
+        compute: (c) => c.speedMps(),
+        format: (v, units) => `${(v * STAT_UNITS[units].mpsToSpeed).toFixed(1)} ${STAT_UNITS[units].speed}`,
+        template: (units) => `00.0 ${STAT_UNITS[units].speed}`
+      },
+      {
+        id: 'distance', label: 'Distance', scope: 'track',
+        compute: (c) => c.distanceM,
+        format: (v, units) => `${(v / STAT_UNITS[units].mPerDistance).toFixed(2)} ${STAT_UNITS[units].distance}`,
+        template: (units) => `00.00 ${STAT_UNITS[units].distance}`
+      },
+      {
+        id: 'hr', label: 'Heart Rate', scope: 'track', requires: 'hr',
+        compute: (c) => c.field('hr'),
+        format: (v) => `${Math.round(v)} bpm`,
+        template: () => '000 bpm'
+      },
+      {
+        id: 'cadence', label: 'Stroke Rate', scope: 'track', requires: 'cad',
+        compute: (c) => c.field('cad'),
+        format: (v) => `${Math.round(v)} spm`,
+        template: () => '000 spm'
+      },
+      {
+        id: 'gap', label: 'Gap between tracks', short: 'GAP', scope: 'pair',
+        compute: (c) => c.distanceM,
+        format: (v, units) => formatShortDistance(v, units),
+        template: (units) => `0.00 ${STAT_UNITS[units].distance}`
+      }
+    ];
+
+    const DEFAULT_STATS_ENABLED = { timer: true, speed: true, distance: true, hr: false, cadence: false, gap: false };
+
+    const SCOREBOARD_FONTS = [
+      { value: LEGEND_FONT, label: 'System' },
+      { value: 'Arial', label: 'Arial' },
+      { value: 'Helvetica', label: 'Helvetica' },
+      { value: 'Georgia', label: 'Georgia' },
+      { value: 'Times New Roman', label: 'Times New Roman' },
+      { value: 'Courier New', label: 'Courier New' },
+      { value: 'Verdana', label: 'Verdana' }
+    ];
+
     // Collapsible sidebar section with a clickable chevron header
     function CollapsibleSection({ title, defaultOpen = true, children }) {
       const [open, setOpen] = useState(defaultOpen);
@@ -1349,6 +1448,11 @@
       const [watermarkText, setWatermarkText] = useState(DEFAULT_WATERMARK_TEXT);
       const [watermarkSize, setWatermarkSize] = useState(12); // reference px, smaller than other text
       const [watermarkOpacity, setWatermarkOpacity] = useState(50); // percent
+      const [statsEnabled, setStatsEnabled] = useState(DEFAULT_STATS_ENABLED); // STAT_DEFINITIONS id -> on/off
+      const [statsUnits, setStatsUnits] = useState('imperial'); // key of STAT_UNITS
+      const [statsStartProgress, setStatsStartProgress] = useState(0); // progress % where timer/distance start
+      const [statsGapIds, setStatsGapIds] = useState([null, null]); // tracks for the gap stat (null = default)
+      const [scoreboardFont, setScoreboardFont] = useState(LEGEND_FONT);
       const [matchVideoFrame, setMatchVideoFrame] = useState(true); // letterbox preview to export aspect ratio
       const [stageSize, setStageSize] = useState({ width: 0, height: 0 }); // map area available for the preview
       const [exportScale, setExportScale] = useState(null); // export map scale (getExportRenderPlan) while exporting, else null
@@ -1537,7 +1641,21 @@
             return;
           }
           const time = pt.querySelector('time')?.textContent;
-          points.push({ lat, lon, time });
+          const point = { lat, lon, time };
+          // Optional sensor data from <extensions> (e.g. Garmin gpxtpx:hr / gpxtpx:cad),
+          // matched by local name so any namespace prefix works. Feeds the
+          // per-track stats in STAT_DEFINITIONS.
+          for (const [key, names] of Object.entries(GPX_EXTENSION_FIELDS)) {
+            for (const name of names) {
+              const el = pt.getElementsByTagNameNS('*', name)[0];
+              const value = el ? parseFloat(el.textContent) : NaN;
+              if (Number.isFinite(value)) {
+                point[key] = value;
+                break;
+              }
+            }
+          }
+          points.push(point);
         });
 
         // Extract label from filename: use part before first underscore, or full name (minus .gpx) if no underscore
@@ -1708,7 +1826,13 @@
 
         points = smoothPoints(points, SMOOTHING_RADIUS[trackSmoothing] ?? 0);
         const timesMs = points.map(p => (p.time ? new Date(p.time).getTime() : NaN));
-        return { ...track, points, startTime, endTime, duration, timesMs };
+        // Cumulative distance along the track in meters (for distance/speed stats)
+        const cumDistM = new Array(points.length);
+        cumDistM[0] = 0;
+        for (let i = 1; i < points.length; i++) {
+          cumDistM[i] = cumDistM[i - 1] + getDistance(points[i - 1], points[i]) * 1000;
+        }
+        return { ...track, points, startTime, endTime, duration, timesMs, cumDistM };
       }), [tracks, trackSmoothing]);
 
       // For each track, the point matched inside the common-point circle (or null if none)
@@ -1750,30 +1874,31 @@
         return { spanMs, maxRemainingPoints };
       }, [effectiveTracks, alignmentMatches]);
 
-      // Compute which points of a track are visible at the given progress.
-      // Single source of truth shared by browser playback, zoom-follow, and
-      // both video export paths.
-      //
-      // The last returned point is an interpolated "head" between the last
-      // reached GPS fix and the next one, so the line, marker, label, and
-      // follow camera glide continuously instead of stepping a whole fix at a
-      // time (which made motion jumpy, especially when zoomed in or when a
-      // frame covers a non-integer number of fixes).
-      const getVisiblePoints = (track, progressPercent) => {
-        const { points, timesMs } = track;
+      // Absolute time span of all timestamped tracks (simultaneous mode clock)
+      const simultaneousSpan = useMemo(() => {
+        const tracksWithTime = effectiveTracks.filter(t => t.startTime && t.endTime);
+        if (tracksWithTime.length === 0) return null;
+        const earliestStart = Math.min(...tracksWithTime.map(t => t.startTime.getTime()));
+        const latestEnd = Math.max(...tracksWithTime.map(t => t.endTime.getTime()));
+        return { earliestStart, spanMs: latestEnd - earliestStart };
+      }, [effectiveTracks]);
 
-        // Slice points[from..i] and append the head fraction `frac` of the way to points[i + 1]
-        const sliceWithHead = (from, i, frac) => {
-          const visible = points.slice(from, i + 1);
-          if (frac > 0 && i + 1 < points.length) {
-            visible.push(lerpPoint(points[i], points[i + 1], Math.min(frac, 1)));
-          }
-          return visible;
-        };
+      // Where a track's moving head is at the given progress: the visible points
+      // are points[from..index], plus a head `frac` (0..1) of the way to
+      // points[index + 1]. Returns null while the track isn't visible.
+      // Single source of truth for browser playback, zoom-follow, both video
+      // export paths (via getVisiblePoints), and the scoreboard stats.
+      //
+      // The interpolated head lets the line, marker, label, and follow camera
+      // glide continuously instead of stepping a whole GPS fix at a time
+      // (which made motion jumpy, especially when zoomed in).
+      const getHeadState = (track, progressPercent) => {
+        const { points, timesMs } = track;
+        if (points.length === 0) return null;
 
         // Time-based position: last fix at or before `targetMs` (scanning from
         // `from`, skipping untimed fixes), plus the fraction toward the next fix
-        const sliceAtTime = (from, targetMs) => {
+        const headAtTime = (from, targetMs) => {
           let lastIndex = from;
           for (let i = from + 1; i < points.length; i++) {
             const t = timesMs[i];
@@ -1785,39 +1910,38 @@
               const frac = (i === lastIndex + 1 && !isNaN(lastT) && t > lastT)
                 ? (targetMs - lastT) / (t - lastT)
                 : 0;
-              return sliceWithHead(from, lastIndex, frac);
+              return { from, index: lastIndex, frac };
             }
             lastIndex = i;
           }
-          return points.slice(from, lastIndex + 1);
+          return { from, index: lastIndex, frac: 0 };
         };
 
         // Index-based position: `exactCount` fixes reached (fractional part
         // becomes the head), counted from `from`
-        const sliceAtCount = (from, exactCount) => {
-          if (exactCount <= 0) return [];
+        const headAtCount = (from, exactCount) => {
           const count = Math.floor(exactCount);
-          if (count === 0) return [];
-          const lastIndex = Math.min(from + count - 1, points.length - 1);
-          return sliceWithHead(from, lastIndex, exactCount - count);
+          if (!(count > 0)) return null;
+          const index = Math.min(from + count - 1, points.length - 1);
+          return { from, index, frac: index === from + count - 1 ? exactCount - count : 0 };
         };
 
         // Aligned mode: race all matched tracks from the common point using
         // real elapsed time from each track's own crossing
         if (alignmentActive) {
           const match = alignmentMatches[track.id];
-          if (!match) return []; // no point within radius - excluded from the race
+          if (!match) return null; // no point within radius - excluded from the race
           const alignIdx = match.index;
 
           const alignPointTime = timesMs[alignIdx];
           if (alignedTiming.spanMs > 0 && !isNaN(alignPointTime)) {
             const tau = (progressPercent / 100) * alignedTiming.spanMs;
-            return sliceAtTime(alignIdx, alignPointTime + tau);
+            return headAtTime(alignIdx, alignPointTime + tau);
           }
 
           // No usable timestamps - pace by point index instead (the align
           // point itself is always shown, hence the +1)
-          return sliceAtCount(alignIdx, (progressPercent / 100) * alignedTiming.maxRemainingPoints + 1);
+          return headAtCount(alignIdx, (progressPercent / 100) * alignedTiming.maxRemainingPoints + 1);
         }
 
         if (animationStyle === 'sequential') {
@@ -1826,28 +1950,329 @@
           const totalPointsBefore = tracksBeforeThis.reduce((sum, t) => sum + t.points.length, 0);
           const totalPoints = effectiveTracks.reduce((sum, t) => sum + t.points.length, 0);
           const exactTotalPoint = (progressPercent / 100) * totalPoints;
-          return sliceAtCount(0, Math.min(exactTotalPoint - totalPointsBefore, points.length));
+          return headAtCount(0, Math.min(exactTotalPoint - totalPointsBefore, points.length));
         }
 
         // Simultaneous - use absolute time-based synchronization if available
-        if (track.duration && track.startTime) {
-          const tracksWithTime = effectiveTracks.filter(t => t.startTime && t.endTime);
-          const earliestStart = Math.min(...tracksWithTime.map(t => t.startTime.getTime()));
-          const latestEnd = Math.max(...tracksWithTime.map(t => t.endTime.getTime()));
-          const totalTimeSpan = latestEnd - earliestStart;
-
-          const currentAbsoluteTime = earliestStart + (progressPercent / 100) * totalTimeSpan;
-
+        if (track.duration && track.startTime && simultaneousSpan) {
+          const currentAbsoluteTime = simultaneousSpan.earliestStart + (progressPercent / 100) * simultaneousSpan.spanMs;
           if (currentAbsoluteTime < track.startTime.getTime()) {
-            return [];
+            return null;
           }
-
-          return sliceAtTime(0, currentAbsoluteTime);
+          return headAtTime(0, currentAbsoluteTime);
         }
 
         // Fallback to percentage-based if no time data
-        return sliceAtCount(0, (progressPercent / 100) * points.length);
+        return headAtCount(0, (progressPercent / 100) * points.length);
       };
+
+      // Interpolated head position ({lat, lon}) for a head state
+      const getHeadPoint = (track, head) => {
+        const { points } = track;
+        return head.frac > 0 && head.index + 1 < points.length
+          ? lerpPoint(points[head.index], points[head.index + 1], Math.min(head.frac, 1))
+          : points[head.index];
+      };
+
+      // Points of a track visible at the given progress; the last one is the
+      // interpolated head (see getHeadState)
+      const getVisiblePoints = (track, progressPercent) => {
+        const head = getHeadState(track, progressPercent);
+        if (!head) return [];
+        const visible = track.points.slice(head.from, head.index + 1);
+        if (head.frac > 0 && head.index + 1 < track.points.length) {
+          visible.push(getHeadPoint(track, head));
+        }
+        return visible;
+      };
+
+      // ---- Scoreboard stats (see STAT_DEFINITIONS) ----
+
+      // Point fields present in any track (gates stats with `requires`)
+      const availableFields = useMemo(() => {
+        const fields = new Set();
+        effectiveTracks.forEach(track => track.points.forEach(p => {
+          Object.keys(GPX_EXTENSION_FIELDS).forEach(key => { if (p[key] !== undefined) fields.add(key); });
+        }));
+        return fields;
+      }, [effectiveTracks]);
+
+      const isStatAvailable = (def) => {
+        if (def.requires && !availableFields.has(def.requires)) return false;
+        if (def.scope === 'pair' && effectiveTracks.length < 2) return false;
+        return true;
+      };
+
+      const activeStats = STAT_DEFINITIONS.filter(def => statsEnabled[def.id] && isStatAvailable(def));
+
+      // The two tracks compared by pair stats (defaults: first two tracks)
+      const gapTracks = (() => {
+        const find = (id) => effectiveTracks.find(t => t.id == id); // == handles string ids from <select>
+        const a = find(statsGapIds[0]) || effectiveTracks[0];
+        const b = find(statsGapIds[1]) || effectiveTracks.find(t => t !== a);
+        return a && b && a !== b ? [a, b] : null;
+      })();
+
+      // Race clock (ms) at a progress: the animation mode's common timeline, or
+      // null when there isn't one (sequential mode / tracks without timestamps)
+      const getRaceClockMs = (progressPercent) => {
+        if (alignmentActive) {
+          return alignedTiming.spanMs > 0 ? (progressPercent / 100) * alignedTiming.spanMs : null;
+        }
+        if (animationStyle === 'simultaneous' && simultaneousSpan) {
+          return (progressPercent / 100) * simultaneousSpan.spanMs;
+        }
+        return null;
+      };
+
+      // Value of a per-point array (timesMs, cumDistM) at an interpolated head
+      const valueAtHead = (values, head) => {
+        const a = values[head.index];
+        const b = values[head.index + 1];
+        return head.frac > 0 && Number.isFinite(b) ? a + (b - a) * head.frac : a;
+      };
+
+      // Average speed (m/s) over the last SPEED_WINDOW_MS of track time
+      const getSpeedAtHead = (track, head) => {
+        const { timesMs, cumDistM } = track;
+        const tHead = valueAtHead(timesMs, head);
+        if (isNaN(tHead)) return null;
+        const tTarget = tHead - SPEED_WINDOW_MS;
+        let j = head.index;
+        while (j > 0 && !(timesMs[j] <= tTarget)) j--;
+        let tPrev = timesMs[j];
+        let dPrev = cumDistM[j];
+        const tNext = timesMs[j + 1];
+        if (tPrev <= tTarget && tNext > tTarget) {
+          const f = (tTarget - tPrev) / (tNext - tPrev);
+          dPrev += (cumDistM[j + 1] - cumDistM[j]) * f;
+          tPrev = tTarget;
+        }
+        const dt = tHead - tPrev;
+        if (!(dt >= 2000)) return null; // too little history for a stable reading
+        return (valueAtHead(cumDistM, head) - dPrev) / (dt / 1000);
+      };
+
+      // Latest sensor reading (e.g. hr) at the head, tolerating a few dropped samples
+      const getFieldAtHead = (track, head, key) => {
+        for (let i = head.index; i >= Math.max(head.from, head.index - 10); i--) {
+          const v = track.points[i][key];
+          if (Number.isFinite(v)) return v;
+        }
+        return null;
+      };
+
+      // Formatted scoreboard values at a progress:
+      // { race: {statId: text}, tracks: {trackId: {statId: text}}, pair: {statId: text} }
+      const computeScoreboardStats = (progressPercent) => {
+        const result = { race: {}, tracks: {}, pair: {} };
+        if (activeStats.length === 0) return result;
+        const beforeStart = progressPercent < statsStartProgress;
+        const show = (def, value) => (value === null || value === undefined || !Number.isFinite(value)
+          ? '\u2014'
+          : def.format(value, statsUnits));
+
+        const heads = new Map();
+        effectiveTracks.forEach(track => heads.set(track.id, getHeadState(track, progressPercent)));
+
+        const clockNow = getRaceClockMs(progressPercent);
+        const clockStart = getRaceClockMs(statsStartProgress);
+        const raceCtx = { elapsedMs: clockNow !== null && clockStart !== null ? clockNow - clockStart : null };
+
+        effectiveTracks.forEach(track => {
+          const head = heads.get(track.id);
+          const trackCtx = {
+            get distanceM() {
+              if (!head) return null;
+              if (beforeStart) return 0;
+              const startHead = getHeadState(track, statsStartProgress);
+              const startDist = startHead ? valueAtHead(track.cumDistM, startHead) : track.cumDistM[head.from];
+              return Math.max(0, valueAtHead(track.cumDistM, head) - startDist);
+            },
+            speedMps: () => (head ? getSpeedAtHead(track, head) : null),
+            field: (key) => (head ? getFieldAtHead(track, head, key) : null)
+          };
+          result.tracks[track.id] = {};
+          activeStats.filter(d => d.scope === 'track').forEach(def => {
+            result.tracks[track.id][def.id] = show(def, def.compute(trackCtx));
+          });
+        });
+
+        let pairCtx = { distanceM: null };
+        if (gapTracks) {
+          const [a, b] = gapTracks;
+          const headA = heads.get(a.id);
+          const headB = heads.get(b.id);
+          if (headA && headB) {
+            pairCtx = { distanceM: getDistance(getHeadPoint(a, headA), getHeadPoint(b, headB)) * 1000 };
+          }
+        }
+
+        activeStats.forEach(def => {
+          if (def.scope === 'race') result.race[def.id] = show(def, def.compute(raceCtx));
+          if (def.scope === 'pair') result.pair[def.id] = show(def, def.compute(pairCtx));
+        });
+        return result;
+      };
+
+      // Draw the legend / scoreboard. Shared by the preview overlay canvas and
+      // captureFrame so both are identical. Sizes are reference px x `scale`;
+      // `bottomReserve` keeps a bottom-right panel above the watermark.
+      const drawScoreboard = (ctx, frameWidth, frameHeight, scale, progressPercent, bottomReserve) => {
+        const rows = effectiveTracks;
+        if (rows.length === 0) return;
+        const layout = getLegendLayout(legendSize, scale);
+        const stats = computeScoreboardStats(progressPercent);
+        const raceDefs = activeStats.filter(d => d.scope === 'race');
+        const trackDefs = activeStats.filter(d => d.scope === 'track');
+        const pairDefs = gapTracks ? activeStats.filter(d => d.scope === 'pair') : [];
+        const font = scoreboardFont;
+        const itemFont = `${layout.itemFont}px ${font}`;
+        const valueFont = `600 ${layout.itemFont}px ${font}`;
+        const captionFont = `600 ${layout.titleFont}px ${font}`;
+        const headerValueSize = layout.itemFont * 1.35;
+        const headerValueFont = `700 ${headerValueSize}px ${font}`;
+        const colGap = layout.barGap * 1.6;
+        const captionGap = layout.barGap * 0.8;
+        const supportsLetterSpacing = 'letterSpacing' in ctx;
+
+        ctx.save();
+        const measure = (text, f, spaced = false) => {
+          ctx.font = f;
+          if (supportsLetterSpacing) ctx.letterSpacing = spaced ? `${layout.titleLetterSpacing}px` : '0px';
+          const w = ctx.measureText(text).width + (spaced && !supportsLetterSpacing ? text.length * layout.titleLetterSpacing : 0);
+          if (supportsLetterSpacing) ctx.letterSpacing = '0px';
+          return w;
+        };
+        const drawText = (text, x, y, f, color, align = 'left', spaced = false) => {
+          ctx.font = f;
+          ctx.fillStyle = color;
+          ctx.textAlign = align;
+          if (supportsLetterSpacing) ctx.letterSpacing = spaced ? `${layout.titleLetterSpacing}px` : '0px';
+          ctx.fillText(text, x, y);
+          if (supportsLetterSpacing) ctx.letterSpacing = '0px';
+        };
+
+        // Header: race stats (e.g. TIME 12:34), or the plain "TRACKS" caption
+        const headerItems = raceDefs.map(def => ({
+          caption: def.short || def.label.toUpperCase(),
+          value: stats.race[def.id],
+          width: Math.max(measure(def.template(statsUnits), headerValueFont), measure(stats.race[def.id], headerValueFont))
+        }));
+        let headerWidth;
+        let headerHeight;
+        if (headerItems.length > 0) {
+          headerWidth = headerItems.reduce((sum, item, i) =>
+            sum + (i > 0 ? colGap : 0) + measure(item.caption, captionFont, true) + captionGap + item.width, 0);
+          headerHeight = headerValueSize * 1.2;
+        } else {
+          headerWidth = measure('TRACKS', captionFont, true);
+          headerHeight = layout.titleHeight;
+        }
+
+        // Track rows: color bar, name, one right-aligned column per track stat
+        const nameWidth = Math.max(...rows.map(t => measure(t.label, itemFont)));
+        const columnWidths = trackDefs.map(def => Math.max(
+          measure(def.template(statsUnits), valueFont),
+          ...rows.map(t => measure(stats.tracks[t.id]?.[def.id] ?? '', valueFont))
+        ));
+        const rowWidth = layout.barWidth + layout.barGap + nameWidth +
+          columnWidths.reduce((sum, w) => sum + colGap + w, 0);
+
+        // Footer rows: pair stats (e.g. GAP Kai-Kimo 160 ft)
+        const pairName = gapTracks ? `${gapTracks[0].label} \u2013 ${gapTracks[1].label}` : '';
+        const footerItems = pairDefs.map(def => {
+          const caption = def.short || def.label.toUpperCase();
+          const valueWidth = Math.max(measure(def.template(statsUnits), valueFont), measure(stats.pair[def.id], valueFont));
+          return {
+            caption, value: stats.pair[def.id], valueWidth,
+            width: measure(caption, captionFont, true) + captionGap + measure(pairName, itemFont) + colGap + valueWidth
+          };
+        });
+        const footerHeight = footerItems.length * layout.rowHeight;
+
+        const contentWidth = Math.max(headerWidth, rowWidth, ...footerItems.map(f => f.width));
+        const panelWidth = 2 * layout.pad + contentWidth;
+        const panelHeight = 2 * layout.pad + headerHeight + layout.titleGap + rows.length * layout.rowHeight +
+          (footerItems.length > 0 ? layout.titleGap + footerHeight : 0);
+
+        const isRight = legendPosition === 'top-right' || legendPosition === 'bottom-right';
+        const isTop = legendPosition === 'top-left' || legendPosition === 'top-right';
+        const bottomMargin = isRight ? Math.max(layout.margin, bottomReserve) : layout.margin;
+        const x0 = isRight ? frameWidth - panelWidth - layout.margin : layout.margin;
+        const y0 = isTop ? layout.margin : frameHeight - panelHeight - bottomMargin;
+
+        // Background
+        ctx.fillStyle = 'rgba(45, 45, 45, 0.95)';
+        ctx.beginPath();
+        if (typeof ctx.roundRect === 'function') {
+          ctx.roundRect(x0, y0, panelWidth, panelHeight, layout.radius);
+        } else {
+          ctx.rect(x0, y0, panelWidth, panelHeight);
+        }
+        ctx.fill();
+        ctx.textBaseline = 'middle';
+
+        const left = x0 + layout.pad;
+        const right = x0 + panelWidth - layout.pad;
+        let y = y0 + layout.pad;
+
+        // Header
+        const headerMid = y + headerHeight / 2;
+        if (headerItems.length > 0) {
+          let x = left;
+          headerItems.forEach((item, i) => {
+            if (i > 0) x += colGap;
+            drawText(item.caption, x, headerMid, captionFont, '#999', 'left', true);
+            x += measure(item.caption, captionFont, true) + captionGap;
+            drawText(item.value, x, headerMid, headerValueFont, '#ffffff');
+            x += item.width;
+          });
+        } else {
+          drawText('TRACKS', left, headerMid, captionFont, '#999', 'left', true);
+        }
+        y += headerHeight + layout.titleGap;
+
+        // Track rows
+        rows.forEach(track => {
+          const mid = y + layout.rowHeight / 2;
+          ctx.fillStyle = track.color;
+          ctx.fillRect(left, mid - layout.barHeight / 2, layout.barWidth, layout.barHeight);
+          drawText(track.label, left + layout.barWidth + layout.barGap, mid, itemFont, '#ffffff');
+          let colRight = left + layout.barWidth + layout.barGap + nameWidth;
+          trackDefs.forEach((def, i) => {
+            colRight += colGap + columnWidths[i];
+            drawText(stats.tracks[track.id]?.[def.id] ?? '', colRight, mid, valueFont, '#ffffff', 'right');
+          });
+          y += layout.rowHeight;
+        });
+
+        // Footer rows
+        if (footerItems.length > 0) {
+          y += layout.titleGap;
+          footerItems.forEach(item => {
+            const mid = y + layout.rowHeight / 2;
+            drawText(item.caption, left, mid, captionFont, '#999', 'left', true);
+            drawText(pairName, left + measure(item.caption, captionFont, true) + captionGap, mid, itemFont, '#ffffff');
+            drawText(item.value, right, mid, valueFont, '#ffffff', 'right');
+            y += layout.rowHeight;
+          });
+        }
+        ctx.restore();
+      };
+
+      // Redraw the preview legend/scoreboard overlay after every render (cheap:
+      // one small panel). It lives on the reference-size surface, so it is
+      // drawn at scale 1 and CSS-scaled with the map.
+      const scoreboardCanvasRef = useRef(null);
+      useEffect(() => {
+        const canvas = scoreboardCanvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!showLegend || isRendering || effectiveTracks.length === 0) return;
+        drawScoreboard(ctx, canvas.width, canvas.height, 1, progress, bottomRightReserve);
+      });
 
       const animate = (timestamp) => {
         if (!isPlayingRef.current || tracks.length === 0) {
@@ -2445,61 +2870,13 @@
         const watermarkLayout = getWatermarkLayout(watermarkSize, frameScale);
         const bottomRightReserve = hasWatermark ? watermarkLayout.reserve : 0;
 
-        // 4. Draw legend if visible (same geometry as the preview DOM legend)
+        // 4. Draw legend / scoreboard if visible (same drawing as the preview overlay)
         if (shouldShowLegend && currentTracks && currentTracks.length > 0) {
-          ctx.save();
           try {
-            const layout = getLegendLayout(legendSize, frameScale);
-            const supportsLetterSpacing = 'letterSpacing' in ctx;
-
-            // Size the box to its content
-            ctx.font = `600 ${layout.titleFont}px ${LEGEND_FONT}`;
-            if (supportsLetterSpacing) ctx.letterSpacing = `${layout.titleLetterSpacing}px`;
-            const titleWidth = ctx.measureText('TRACKS').width + (supportsLetterSpacing ? 0 : 6 * layout.titleLetterSpacing);
-            if (supportsLetterSpacing) ctx.letterSpacing = '0px';
-            ctx.font = `${layout.itemFont}px ${LEGEND_FONT}`;
-            const maxLabelWidth = Math.max(...currentTracks.map(t => ctx.measureText(t.label).width));
-            const legendWidth = 2 * layout.pad + Math.max(titleWidth, layout.barWidth + layout.barGap + maxLabelWidth);
-            const legendHeight = 2 * layout.pad + layout.titleHeight + layout.titleGap + currentTracks.length * layout.rowHeight;
-
-            const isRight = legendPos === 'top-right' || legendPos === 'bottom-right';
-            const isTop = legendPos === 'top-left' || legendPos === 'top-right';
-            const legendX = isRight ? sourceWidth - legendWidth - layout.margin : layout.margin;
-            const bottomMargin = isRight ? Math.max(layout.margin, bottomRightReserve) : layout.margin;
-            const legendY = isTop ? layout.margin : sourceHeight - legendHeight - bottomMargin;
-
-            // Background
-            ctx.fillStyle = 'rgba(45, 45, 45, 0.95)';
-            ctx.beginPath();
-            if (typeof ctx.roundRect === 'function') {
-              ctx.roundRect(legendX, legendY, legendWidth, legendHeight, layout.radius);
-            } else {
-              ctx.rect(legendX, legendY, legendWidth, legendHeight);
-            }
-            ctx.fill();
-
-            // Title
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'middle';
-            ctx.font = `600 ${layout.titleFont}px ${LEGEND_FONT}`;
-            if (supportsLetterSpacing) ctx.letterSpacing = `${layout.titleLetterSpacing}px`;
-            ctx.fillStyle = '#999';
-            ctx.fillText('TRACKS', legendX + layout.pad, legendY + layout.pad + layout.titleHeight / 2);
-            if (supportsLetterSpacing) ctx.letterSpacing = '0px';
-
-            // Items: color bar + label, vertically centered in each row
-            ctx.font = `${layout.itemFont}px ${LEGEND_FONT}`;
-            currentTracks.forEach((track, idx) => {
-              const rowCenter = legendY + layout.pad + layout.titleHeight + layout.titleGap + (idx + 0.5) * layout.rowHeight;
-              ctx.fillStyle = track.color;
-              ctx.fillRect(legendX + layout.pad, rowCenter - layout.barHeight / 2, layout.barWidth, layout.barHeight);
-              ctx.fillStyle = '#ffffff';
-              ctx.fillText(track.label, legendX + layout.pad + layout.barWidth + layout.barGap, rowCenter);
-            });
+            drawScoreboard(ctx, sourceWidth, sourceHeight, frameScale, currentProgress, bottomRightReserve);
           } catch (e) {
             console.warn('Could not draw legend:', e);
           }
-          ctx.restore();
         }
 
         // 5. Draw video title if present
@@ -3446,6 +3823,13 @@
                           className="progress-fill"
                           style={{ width: `${progress}%` }}
                         />
+                        {statsStartProgress > 0 && activeStats.length > 0 && showLegend && (
+                          <div
+                            className="stats-start-marker"
+                            title="Stats start"
+                            style={{ left: `${statsStartProgress}%` }}
+                          />
+                        )}
                       </div>
                     </div>
                     
@@ -3663,46 +4047,6 @@
                         <input
                           type="checkbox"
                           className="checkbox"
-                          checked={showLegend}
-                          onChange={(e) => setShowLegend(e.target.checked)}
-                        />
-                        <span>Show legend</span>
-                      </label>
-                    </div>
-
-                    {showLegend && (
-                      <div style={{ marginBottom: '12px', marginLeft: '24px' }}>
-                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Legend Position</label>
-                        <select
-                          className="select"
-                          value={legendPosition}
-                          onChange={(e) => setLegendPosition(e.target.value)}
-                          style={{ width: '100%' }}
-                        >
-                          <option value="top-left">Top Left</option>
-                          <option value="top-right">Top Right</option>
-                          <option value="bottom-left">Bottom Left</option>
-                          <option value="bottom-right">Bottom Right</option>
-                        </select>
-                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginTop: '8px', marginBottom: '4px' }}>Legend Size: {legendSize}px</label>
-                        <input
-                          type="range"
-                          className="slider"
-                          min="10"
-                          max="40"
-                          step="1"
-                          value={legendSize}
-                          onChange={(e) => setLegendSize(parseInt(e.target.value, 10))}
-                          disabled={isRecording}
-                        />
-                      </div>
-                    )}
-
-                    <div className="control-group">
-                      <label className="checkbox-group">
-                        <input
-                          type="checkbox"
-                          className="checkbox"
                           checked={showWatermark}
                           onChange={(e) => setShowWatermark(e.target.checked)}
                           disabled={isRecording}
@@ -3796,6 +4140,153 @@
                             );
                           })()}
                         </div>
+                      </>
+                    )}
+                    </CollapsibleSection>
+                  </div>
+
+                  <div className="controls">
+                    <CollapsibleSection title="Scoreboard & Stats">
+                    <div className="control-group">
+                      <label className="checkbox-group">
+                        <input
+                          type="checkbox"
+                          className="checkbox"
+                          checked={showLegend}
+                          onChange={(e) => setShowLegend(e.target.checked)}
+                        />
+                        <span>Show legend / scoreboard</span>
+                      </label>
+                    </div>
+
+                    {showLegend && (
+                      <>
+                        <div className="control-group">
+                          <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Position</label>
+                          <select
+                            className="select"
+                            value={legendPosition}
+                            onChange={(e) => setLegendPosition(e.target.value)}
+                            style={{ width: '100%', marginBottom: '8px' }}
+                          >
+                            <option value="top-left">Top Left</option>
+                            <option value="top-right">Top Right</option>
+                            <option value="bottom-left">Bottom Left</option>
+                            <option value="bottom-right">Bottom Right</option>
+                          </select>
+                          <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Font</label>
+                          <select
+                            className="select"
+                            value={scoreboardFont}
+                            onChange={(e) => setScoreboardFont(e.target.value)}
+                            disabled={isRecording}
+                            style={{ width: '100%', marginBottom: '8px' }}
+                          >
+                            {SCOREBOARD_FONTS.map(f => (
+                              <option key={f.label} value={f.value}>{f.label}</option>
+                            ))}
+                          </select>
+                          <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Size: {legendSize}px</label>
+                          <input
+                            type="range"
+                            className="slider"
+                            min="10"
+                            max="40"
+                            step="1"
+                            value={legendSize}
+                            onChange={(e) => setLegendSize(parseInt(e.target.value, 10))}
+                            disabled={isRecording}
+                          />
+                        </div>
+
+                        <div className="control-group">
+                          <div className="control-label">Stats</div>
+                          {STAT_DEFINITIONS.map(def => {
+                            const available = isStatAvailable(def);
+                            const reason = def.requires ? 'no data in these tracks' : 'needs 2+ tracks';
+                            return (
+                              <label key={def.id} className="checkbox-group" style={{ opacity: available ? 1 : 0.5 }}>
+                                <input
+                                  type="checkbox"
+                                  className="checkbox"
+                                  checked={!!statsEnabled[def.id] && available}
+                                  onChange={(e) => setStatsEnabled(prev => ({ ...prev, [def.id]: e.target.checked }))}
+                                  disabled={isRecording || !available}
+                                />
+                                <span>{def.label}{available ? '' : ` (${reason})`}</span>
+                              </label>
+                            );
+                          })}
+                          {statsEnabled.gap && gapTracks && (
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginLeft: '24px', marginTop: '4px' }}>
+                              {[0, 1].map(i => (
+                                <select
+                                  key={i}
+                                  className="select"
+                                  value={gapTracks[i].id}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    setStatsGapIds(prev => {
+                                      const next = [...prev];
+                                      next[i] = value;
+                                      return next;
+                                    });
+                                  }}
+                                  disabled={isRecording}
+                                  style={{ flex: 1, minWidth: 0 }}
+                                >
+                                  {tracks.map(t => (
+                                    <option key={t.id} value={t.id}>{t.label}</option>
+                                  ))}
+                                </select>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {activeStats.length > 0 && (
+                          <>
+                            <div className="control-group">
+                              <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Units</label>
+                              <select
+                                className="select"
+                                value={statsUnits}
+                                onChange={(e) => setStatsUnits(e.target.value)}
+                                disabled={isRecording}
+                                style={{ width: '100%' }}
+                              >
+                                {Object.entries(STAT_UNITS).map(([key, u]) => (
+                                  <option key={key} value={key}>{u.label}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="control-group">
+                              <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Stats Start</label>
+                              <div className="button-group">
+                                <button
+                                  className="btn btn-secondary"
+                                  onClick={() => setStatsStartProgress(progress)}
+                                  disabled={isRecording}
+                                >
+                                  {'\u2691'} Set start here
+                                </button>
+                                <button
+                                  className="btn btn-secondary"
+                                  onClick={() => setStatsStartProgress(0)}
+                                  disabled={isRecording || statsStartProgress === 0}
+                                >
+                                  Reset
+                                </button>
+                              </div>
+                              <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
+                                {statsStartProgress === 0
+                                  ? 'Timer and distance start at the beginning. Scrub to the race start and click "Set start here" to change it.'
+                                  : `Timer and distance start ${((statsStartProgress / 100) * exportDuration).toFixed(1)}s into the video (orange mark on the playback bar); the timer counts down before it.`}
+                              </p>
+                            </div>
+                          </>
+                        )}
                       </>
                     )}
                     </CollapsibleSection>
@@ -4111,54 +4602,14 @@
                   '--ui-scale': 1 / displayScale
                 }}
               >
-              {tracks.length > 0 && showLegend && !isRendering && (() => {
-                const layout = getLegendLayout(legendSize, 1);
-                const isRight = legendPosition === 'top-right' || legendPosition === 'bottom-right';
-                const isTop = legendPosition === 'top-left' || legendPosition === 'top-right';
-                const edgeMargin = !isTop && isRight ? Math.max(layout.margin, bottomRightReserve) : layout.margin;
-                return (
-                  <div
-                    className="map-legend"
-                    style={{
-                      [isTop ? 'top' : 'bottom']: `${edgeMargin}px`,
-                      [isRight ? 'right' : 'left']: `${layout.margin}px`,
-                      padding: `${layout.pad}px`,
-                      borderRadius: `${layout.radius}px`,
-                      fontFamily: LEGEND_FONT
-                    }}
-                  >
-                    <div
-                      className="legend-title"
-                      style={{
-                        fontSize: `${layout.titleFont}px`,
-                        lineHeight: `${layout.titleHeight}px`,
-                        marginBottom: `${layout.titleGap}px`,
-                        letterSpacing: `${layout.titleLetterSpacing}px`
-                      }}
-                    >
-                      Tracks
-                    </div>
-                    {tracks.map(track => (
-                      <div
-                        key={track.id}
-                        className="legend-item"
-                        style={{ height: `${layout.rowHeight}px`, fontSize: `${layout.itemFont}px` }}
-                      >
-                        <div
-                          className="legend-color"
-                          style={{
-                            backgroundColor: track.color,
-                            width: `${layout.barWidth}px`,
-                            height: `${layout.barHeight}px`,
-                            marginRight: `${layout.barGap}px`
-                          }}
-                        ></div>
-                        <div className="legend-label">{track.label}</div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
+              {/* Legend / scoreboard: drawn by drawScoreboard, like the export */}
+              <canvas
+                ref={scoreboardCanvasRef}
+                className="map-scoreboard"
+                width={surfaceSize ? surfaceSize.width : 0}
+                height={surfaceSize ? surfaceSize.height : 0}
+                style={{ display: isRendering ? 'none' : 'block' }}
+              />
               {videoTitle && videoTitle.trim() !== '' && (
                 <div
                   className="map-title"

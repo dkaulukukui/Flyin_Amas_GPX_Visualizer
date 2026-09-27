@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 3.3.0 (as of last update)
+   - Current version: 3.4.0 (as of last update)
 
 ### Key Technical Patterns
 
@@ -102,9 +102,11 @@ Two animation modes with different timestamp handling:
   tracks show only as dimmed preview; point-index pacing fallback for timestamp-less tracks
 - Overrides the animationStyle select (disabled while active)
 
-**Single source of truth**: `getVisiblePoints(track, progressPercent)` (component scope) computes
-visible points for all three modes and is used by the polyline render effect, the zoom-follow
-effect, `renderExportFrame`, and `drawTracksDirect` — change animation behavior ONLY there.
+**Single source of truth**: `getHeadState(track, progressPercent)` (component scope) returns where a
+track's head is — `{from, index, frac}` (visible points `points[from..index]` plus a head `frac` of
+the way to the next point) or null — for all three modes. `getVisiblePoints` is a thin wrapper used by
+the polyline render effect, zoom-follow, `renderExportFrame`, and `drawTracksDirect`; the scoreboard
+stats read `getHeadState` directly. Change animation behavior ONLY in `getHeadState`.
 
 **Head interpolation (v3.1.0)**: `getVisiblePoints` returns the reached GPS fixes plus one
 interpolated "head" point (`lerpPoint`) partway to the next fix — by time fraction in time-based
@@ -130,6 +132,24 @@ Interpolation only happens between adjacent timed fixes; uses precomputed `track
 - `examples/Kai.gpx` and `examples/Kimo.gpx` are fetched on startup and loaded with
   `isExample: true`; `handleFileUpload` filters them out as soon as the user uploads their own files
 - `.gitignore` excludes `*.gpx` but exempts `examples/*.gpx`
+
+**Scoreboard & Stats (v3.4.0)**:
+- The legend is a scoreboard: header = race-scope stats (or "TRACKS"), one row per track with a column
+  per track-scope stat, footer = pair-scope stats. `drawScoreboard(ctx, w, h, scale, progress, reserve)`
+  draws it on canvas — used by BOTH the preview overlay (`<canvas class="map-scoreboard">` on the
+  surface, redrawn after every render) and `captureFrame`, so preview and export match exactly
+- `STAT_DEFINITIONS` registry (top level). **To add a stat**, add an entry with `id`, `label`, `scope`
+  ('race' | 'track' | 'pair'), `compute(ctx)` → number|null, `format(value, units)`, `template(units)`
+  (widest text; fixes column width so the panel doesn't jitter), optional `requires` (point field) and
+  `short` caption. Add it to `DEFAULT_STATS_ENABLED`. The UI checkbox is generated from the registry.
+  Sensor data: add the field to `GPX_EXTENSION_FIELDS` (parsed by local name from `<extensions>`);
+  per-track ctx exposes `field(key)`, `distanceM`, `speedMps()`; race ctx `elapsedMs`; pair ctx `distanceM`
+- `computeScoreboardStats(progress)` builds the contexts: race clock from `getRaceClockMs` (aligned: tau;
+  simultaneous: absolute span; sequential/untimed: null → "—"), distances from `track.cumDistM`
+  (precomputed in `effectiveTracks`), speed averaged over `SPEED_WINDOW_MS` (10 s), gap = haversine
+  between the two `gapTracks` heads
+- `statsStartProgress`: timer and distance are measured from this progress ("Set start here" button,
+  orange marker on the playback bar); timer is negative before it, distance 0
 
 **Visual Elements**:
 - Full track preview (dimmed, togglable): Shows complete path at 30% opacity
@@ -198,7 +218,7 @@ All state managed through React useState/useRef hooks:
 - `exportAspectRatio`, `exportResolution`: Export settings
 - `exportDuration`: Video/preview duration in seconds — direct user input (5-300s, default 60)
 - `labelFont`, `labelSize`: Track label styling (preview + export), labelSize default 16
-- `legendSize`: legend text size in reference px (10-40, default 15); legend box sizes to content
+- `legendSize`: legend/scoreboard text size in reference px (10-40, default 15); box sizes to content
 - `showWatermark`, `watermarkText`, `watermarkSize`, `watermarkOpacity`: lower-right watermark (default on,
   `DEFAULT_WATERMARK_TEXT` "Made at Flyinamas.com", 12px, 50%). Geometry from `getWatermarkLayout()`
   (shared by the DOM `.map-watermark` and `captureFrame`); its `reserve` lifts a bottom-right legend/title
@@ -206,6 +226,8 @@ All state managed through React useState/useRef hooks:
 - `matchVideoFrame`: letterbox the preview to the export aspect ratio (default true)
 - `stageSize`: measured map-area size (ResizeObserver) used to fit the preview frame
 - `exportScale`: export map scale while exporting, else null (see Frame Scaling)
+- `statsEnabled` (id → bool, default timer/speed/distance), `statsUnits` ('imperial' default | 'metric'),
+  `statsStartProgress`, `statsGapIds` (null → first two tracks), `scoreboardFont`: see Scoreboard & Stats
 - `trackSmoothing`: 'off' | 'light' | 'medium' | 'strong' (default 'light') — Gaussian window radius
   from `SMOOTHING_RADIUS` (0/2/4/8 points); endpoints and timestamps preserved
 - `trimOpenId`: Track whose ✂ Trim sliders are expanded (trim values live on the track objects)
@@ -372,7 +394,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 3.3.0**
+**Current Version: 3.4.0**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -398,6 +420,7 @@ No build process required - single HTML file is the entire app.
 - **v3.1.0**: Interpolated track heads (smooth motion between GPS fixes); Track Smoothing option
 - **v3.2.0**: WYSIWYG preview (reference-frame scaling, letterboxed preview, exports match preview at any resolution); Legend Size
 - **v3.3.0**: "FlyinAmas" default title; lower-right watermark (text/size/opacity); larger default text sizes
+- **v3.4.0**: Scoreboard & stats (timer, speed, distance, HR, stroke rate, gap) with a stats registry
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which

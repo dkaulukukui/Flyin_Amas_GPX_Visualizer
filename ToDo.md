@@ -1,5 +1,15 @@
 To Do List:
 
+## Done in v3.4.0
+
+- ~~show statistics on screen (Timer, Speed, total distance, distance between two tracks) with font/size/
+  location customization, uncluttered placement, a framework for future stats, and an adjustable start
+  point~~ — Done. The legend is now a scoreboard (Scoreboard & Stats section): race timer header, one row
+  per track with Speed / Distance / Heart Rate / Stroke Rate columns, and a Gap row between two chosen
+  tracks. Imperial or Metric. "Set start here" on the playback position sets where timer and distance
+  start. New stats are one entry in `STAT_DEFINITIONS` (HR and cadence already read from GPX extensions).
+  Future ideas: wave counter, flyin ama counter.
+
 ## Done in v3.2.0
 
 - ~~allow user in increase font size of legend~~ — Done. Legend Size slider (10-40px) under Show legend.
@@ -48,5 +58,4 @@ To Do List:
 ## Remaining
 
 (nothing queued — add new ideas here)
-- add feature to show statistics on screen.  statistics to show:  Timer, Speed, total distance, distance between two tracks.  provide standardized customization for these stats: font, size, location.  We need a mechanism to allow the user to place these stats while not cluttering the window or being overly complex.  provide a framework for future stats that arent implemented yet (HR, Strokes per minute, wave counter, flyin ama counter, etc).  For the time/distance stats let the user adjust the actual start point.  
 - Lets consider different user settings layout for bettter usability.
