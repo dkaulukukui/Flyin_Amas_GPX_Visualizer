@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 3.11.0 (as of last update)
+   - Current version: 3.11.1 (as of last update)
 
 ### Key Technical Patterns
 
@@ -55,11 +55,12 @@ The entire application is contained in `index.html` with this organization:
 
 #### Map Rendering (Leaflet Integration)
 - Map initialized with `preferCanvas: true` for better video export
-- **Compositing layers (v3.11.0) — do not remove**: `.leaflet-tile-pane, .leaflet-overlay-pane,
-  .leaflet-marker-pane { will-change: transform }`. With Leaflet 3D disabled, tiles and tracks were painted
-  as one layer and iPhone Safari re-rendered the tiles under the changing tracks' bounding box differently
-  (a darker box following the boat, rest washed out). Confirmed on a real iPhone. Doesn't bring back the
-  desktop tile seams (those came from per-tile 3D layers)
+- **Compositing layer (v3.11.1) — do not remove**: `.leaflet-tile-pane { will-change: transform }`. With
+  Leaflet 3D disabled, tiles and tracks were painted as one layer and iPhone Safari re-rendered the tiles
+  under the changing tracks' bounding box differently (a darker box following the boat, rest washed out).
+  Don't also promote the overlay (track) pane: on iPhone that left torn, stale copies of the lines as the
+  camera moved (v3.11.0). Doesn't bring back the desktop tile seams (those came from per-tile 3D layers).
+  Temporary `?debug=` switches (inline script in `<head>`) exist to confirm this on the phone
 - **Track layer renderer (v3.10.0)**: `L.svg()` — faster than canvas in phone emulation. Exports never depend
   on these layers: `captureFrame` draws tracks with `drawTracksDirect` (it still copies any Leaflet canvases
   if present). Don't reintroduce a "<canvas> required" check in `startRecording`
@@ -457,7 +458,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 3.11.0**
+**Current Version: 3.11.1**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -492,7 +493,8 @@ No build process required - single HTML file is the entire app.
 - **v3.9.1**: Track canvas always repaints in full at 1x (did not fix the iPhone artifact)
 - **v3.10.0**: Track layers drawn with the SVG renderer (did not fix the iPhone artifact)
 - **v3.10.1**: `?debug=` diagnostic switches used to bisect the iPhone artifact on the device (removed in v3.11.0)
-- **v3.11.0**: Tile/track/label panes on their own compositing layers — the actual fix for the iPhone shaded box
+- **v3.11.0**: Tile/track/label panes on their own compositing layers — fixed the iPhone shaded box but tore track lines
+- **v3.11.1**: Only the tile pane on its own compositing layer; temporary `?debug=` switches (overlay, markers, canvas)
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which

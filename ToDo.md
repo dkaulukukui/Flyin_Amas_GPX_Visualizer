@@ -1,5 +1,11 @@
 To Do List:
 
+## In progress (v3.11.1)
+
+- v3.11.0 removed the box but promoting the track (overlay) pane caused torn/stale copies of the track
+  lines ahead of the boats on iPhone. v3.11.1 promotes only the tile pane. Switches to confirm on the phone:
+  `?debug=overlay` (v3.11.0 behavior), `?debug=markers`, `?debug=canvas`.
+
 ## Done in v3.11.0
 
 - **Fixed** the iPhone Safari shaded box (darker box over the travelled tracks' bounding box, rest washed
