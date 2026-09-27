@@ -1,11 +1,17 @@
 To Do List:
 
+## Done in v3.10.0
+
+- The "lighter band" on mobile: a phone screenshot showed a darker box exactly covering the bounding box
+  of the travelled tracks, with the rest of the map washed out (edges screen-aligned; moves with the boat,
+  then gets left behind). It is iPhone Safari's canvas compositing of the semi-transparent track strokes —
+  not tiles or imagery (v3.8.0/v3.9.0) and not Leaflet's partial repaint (v3.9.1 changed nothing). Fixed by
+  drawing track layers with Leaflet's SVG renderer (also faster). `?renderer=canvas` switches back for
+  comparison. **Re-test on the phone.**
+
 ## Done in v3.9.1
 
-- The "lighter band" on mobile was a box-shaped area (screen-aligned edges) whose edge moved with the boat
-  and then slid past it — Leaflet's partial canvas repaint rectangle, composited unevenly by iPhone
-  Safari under the scaled preview (not tiles or imagery; the v3.8.0/v3.9.0 explanations were wrong about
-  this symptom). Fixed by always repainting the whole track canvas (at 1x resolution).
+- Attempted fix (did not help): full-canvas repaints at 1x for the track canvas.
 
 ## Done in v3.9.0
 

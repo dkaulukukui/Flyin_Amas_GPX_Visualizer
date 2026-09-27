@@ -1220,6 +1220,12 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.10.0 - Track layers are now drawn with Leaflet's SVG renderer instead of canvas. A phone screenshot showed the
+    //          iPhone artifact is a darker box exactly covering the bounding box of the travelled tracks (rest of the
+    //          map washed out) - WebKit's canvas compositing of the semi-transparent strokes; the 3.9.1 full-repaint
+    //          change didn't affect it. SVG avoids canvas entirely and is faster (phone emulation, 6x CPU: 24.8 vs
+    //          15.8 fps following, 34.8 vs 20.6 static). ?renderer=canvas keeps the canvas renderer for comparison.
+    //          Exports are unaffected (drawTracksDirect); removed the obsolete "map canvas required" export check.
     // 3.9.1 - Fix the box-shaped lighter/darker area on iPhone whose edge followed the boat (even zoomed out and
     //         when scrubbing): Leaflet's canvas renderer repaints only the rectangle around changed layers, and iOS
     //         Safari composited that rectangle differently from the rest of the canvas under the CSS-scaled preview.
@@ -1347,7 +1353,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.9.1";
+    const APP_VERSION = "3.10.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -2043,19 +2049,23 @@
       useEffect(() => {
         // Initialize map
         if (!mapInstanceRef.current) {
-          // Track canvas that always repaints in full. Leaflet normally clears and
-          // repaints only the rectangle around the layers that changed (the path
-          // travelled so far); on iPhone Safari, under the CSS-scaled preview, that
-          // rectangle was composited differently from the rest of the canvas - a
-          // box-shaped darker/lighter area whose edge followed the boat. With no
-          // redraw bounds, Leaflet clears and repaints the whole canvas every time.
-          // The canvas is sized in reference-frame px (the preview shows it scaled
-          // down), so Leaflet's 2x "retina" backing store is wasted pixels to
-          // repaint; 1x is still sharper than any screen shows the preview at
-          L.Browser.retina = false;
-          const trackRenderer = L.canvas();
-          trackRenderer._extendRedrawBounds = () => {}; // keep _redrawBounds null => full repaint
-          const map = L.map('map', { preferCanvas: true, renderer: trackRenderer }).setView(INITIAL_MAP_CENTER, INITIAL_MAP_ZOOM);
+          // Track layers are drawn as SVG (v3.10.0). With Leaflet's canvas renderer,
+          // iPhone Safari showed a box-shaped shaded area exactly covering the
+          // bounding box of the travelled tracks (the rest of the map looked
+          // washed out) - WebKit's canvas compositing of the semi-transparent
+          // strokes, unaffected by full repaints. SVG avoids canvas entirely.
+          // Exports don't use these layers (drawTracksDirect draws the tracks).
+          // ?renderer=canvas switches back to the canvas renderer for comparison.
+          const useCanvasRenderer = new URLSearchParams(window.location.search).get('renderer') === 'canvas';
+          let trackRenderer;
+          if (useCanvasRenderer) {
+            L.Browser.retina = false; // canvas at 1x: the preview is shown scaled down anyway
+            trackRenderer = L.canvas();
+            trackRenderer._extendRedrawBounds = () => {}; // always repaint in full
+          } else {
+            trackRenderer = L.svg();
+          }
+          const map = L.map('map', { preferCanvas: useCanvasRenderer, renderer: trackRenderer }).setView(INITIAL_MAP_CENTER, INITIAL_MAP_ZOOM);
           // Lower-right corner belongs to the watermark
           map.attributionControl.setPosition('topright');
 
@@ -3934,13 +3944,8 @@
           const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
                         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPad on iOS 13+
 
+          // (No <canvas> check: tracks may be SVG; exports draw them via drawTracksDirect)
           const mapContainer = mapInstanceRef.current.getContainer();
-          const initialCanvases = Array.from(mapContainer.querySelectorAll('canvas'));
-
-          if (initialCanvases.length === 0) {
-            alert('Map canvas not found. Please ensure the map has loaded tiles, then try again.');
-            return;
-          }
 
           // Parse export resolution
           const [exportWidth, exportHeight] = exportResolution.split('x').map(Number);
