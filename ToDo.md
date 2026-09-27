@@ -1,10 +1,18 @@
 To Do List:
 
+## Done in v3.9.0
+
+- Moving band of lighter tiles ahead of the tracks on mobile — this was the leading edge of the view still
+  downloading (Leaflet only requests tiles once they're on screen; the v3.8.0 "imagery" explanation was
+  wrong about the band). Fixed with tile prefetch along the follow camera's upcoming path (next 4 s of
+  video), also used by exports. Slow-connection emulation: view without tiles 45% -> 2% (Clarity),
+  4% -> 0% (standard); exports ~20% faster.
+
 ## Done in v3.8.0
 
-- Tiles still looked a little washed out on mobile after v3.7.0 — traced to the standard Esri imagery itself
-  (hazy, sun-glinted, pale ocean photos and mosaic seams at zoom 16-18). Switched the default to Esri
-  Clarity imagery (clean water, native to zoom 19) with a Map Imagery choice in the Camera tab.
+- Esri Clarity imagery as the default (cleaner, more consistent water at high zoom) with a Map Imagery
+  choice in the Camera tab. Note: Clarity tiles load through two redirects, so first loads are slower
+  (hidden by the v3.9.0 prefetch).
 
 ## Done in v3.7.0
 

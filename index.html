@@ -1220,6 +1220,13 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.9.0 - Tile prefetch for the follow camera: the "lighter band of tiles ahead of the tracks" on mobile was the
+    //         leading edge of the view still downloading - Leaflet only requests tiles once they are on screen. The
+    //         follow camera's upcoming views (next 4 s of video) are now downloaded in the background and served
+    //         from the browser cache when they come into view. Also used by the export (fewer tile waits). Clarity
+    //         tiles each go through two redirects (slower first load), which made the band worse in 3.8.0.
+    //         Slow-connection phone emulation, share of the view with no tile: Clarity 45% -> 2%, standard 4% -> 0%.
+    //         1080p export at zoom 17: 50 s -> 40 s.
     // 3.8.0 - Map imagery: new default Esri Clarity satellite imagery plus a "Map Imagery" choice (Camera tab) to switch
     //         back to standard Esri World Imagery. Investigating the washed-out look on mobile showed it is the
     //         standard imagery itself: at zoom 16-18 it often serves hazy / sun-glinted, pale ocean photos and
@@ -1335,7 +1342,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.8.0";
+    const APP_VERSION = "3.9.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -1361,6 +1368,12 @@
         attribution: 'Esri, DigitalGlobe, GeoEye, Earthstar Geographics'
       }
     };
+
+    // Tile prefetch (v3.9.0): how far ahead of the playhead the follow camera's
+    // future views are downloaded, and how many prefetch requests run at once
+    const PREFETCH_LOOKAHEAD_SECONDS = 4; // of video time
+    const PREFETCH_STEP_SECONDS = 0.25;
+    const PREFETCH_MAX_IN_FLIGHT = 6;
 
     // Camera (follow) zoom range: the Zoom Level slider, and map +/- / wheel /
     // pinch zooms while the follow camera is active, stay within this
@@ -3179,6 +3192,89 @@
         ];
       };
 
+      // ---- Tile prefetch ----
+      // Leaflet only requests a tile once it is on screen, so with the follow
+      // camera the leading edge of the view (ahead of the tracks) was always
+      // still downloading - a visible moving band on slower mobile connections.
+      // We know where the camera is going, so download the tiles for the next
+      // few seconds of views in the background; the browser cache (tiles are
+      // cacheable for a day) then serves them instantly when they come into view.
+      const prefetchRef = useRef({ started: new Set(), queue: [], inFlight: 0 });
+
+      const pumpTilePrefetch = () => {
+        const state = prefetchRef.current;
+        while (state.inFlight < PREFETCH_MAX_IN_FLIGHT && state.queue.length > 0) {
+          const url = state.queue.shift();
+          if (state.started.has(url)) continue;
+          state.started.add(url);
+          state.inFlight++;
+          const img = new Image();
+          img.crossOrigin = 'anonymous'; // same CORS mode as the tile layer, so the cache entry is reused
+          img.onload = img.onerror = () => {
+            state.inFlight--;
+            pumpTilePrefetch();
+          };
+          img.src = url;
+        }
+      };
+
+      // Tile URLs covering a view of width x height px centered at `center` at `zoom`
+      const getTileUrlsForView = (center, zoom, width, height) => {
+        const map = mapInstanceRef.current;
+        const source = MAP_IMAGERY[mapImagery] || MAP_IMAGERY.clarity;
+        const tileZoom = Math.min(Math.round(zoom), source.maxNativeZoom);
+        const overzoom = 2 ** (zoom - tileZoom); // tiles are drawn bigger beyond the native level
+        const p = map.project(center, tileZoom);
+        const halfW = width / 2 / overzoom;
+        const halfH = height / 2 / overzoom;
+        const n = 2 ** tileZoom;
+        const urls = [];
+        for (let y = Math.floor((p.y - halfH) / 256); y <= Math.floor((p.y + halfH) / 256); y++) {
+          if (y < 0 || y >= n) continue;
+          for (let x = Math.floor((p.x - halfW) / 256); x <= Math.floor((p.x + halfW) / 256); x++) {
+            urls.push(L.Util.template(source.url, { x: ((x % n) + n) % n, y, z: tileZoom }));
+          }
+        }
+        return urls;
+      };
+
+      // Queue the tiles the follow camera will need between `fromProgress` and
+      // the lookahead window, nearest first (replaces the previous queue)
+      const prefetchFollowTiles = (fromProgress, zoom, width, height) => {
+        const map = mapInstanceRef.current;
+        if (!map || !zoomToTrack || effectiveTracks.length === 0 || !width || !height) return;
+        const state = prefetchRef.current;
+        if (state.started.size > 5000) state.started.clear(); // cap memory; re-fetches hit the cache
+        const stepPercent = (PREFETCH_STEP_SECONDS / exportDuration) * 100;
+        const steps = Math.ceil(PREFETCH_LOOKAHEAD_SECONDS / PREFETCH_STEP_SECONDS);
+        const queue = [];
+        const seen = new Set();
+        for (let k = 0; k <= steps; k++) {
+          const p = fromProgress + k * stepPercent;
+          if (p <= 0 || p >= 100) continue;
+          const center = getFollowCenter(p);
+          if (!center) continue;
+          getTileUrlsForView(center, zoom, width, height).forEach(url => {
+            if (!seen.has(url) && !state.started.has(url)) {
+              seen.add(url);
+              queue.push(url);
+            }
+          });
+        }
+        state.queue = queue;
+        pumpTilePrefetch();
+      };
+
+      // Preview: keep prefetching ahead of the playhead (throttled while playing)
+      const lastPrefetchRef = useRef(0);
+      useEffect(() => {
+        if (exportScale !== null || !surfaceSize || !zoomToTrack) return;
+        const now = performance.now();
+        if (isPlaying && now - lastPrefetchRef.current < 300) return;
+        lastPrefetchRef.current = now;
+        prefetchFollowTiles(progress, zoomLevel, surfaceSize.width, surfaceSize.height);
+      }, [progress, isPlaying, zoomToTrack, zoomLevel, mapImagery, exportDuration, effectiveTracks, centeredTrackId, animationStyle, alignmentActive, alignmentMatches, surfaceSize?.width, surfaceSize?.height, exportScale]);
+
       // Keep Leaflet in sync with the surface size (not while exporting: the
       // export resizes the map element itself)
       useEffect(() => {
@@ -3661,6 +3757,8 @@
 
         // Apply zoom-to-track for this frame if enabled
         if (zoomToTrack && progressValue > 0 && progressValue < 100 && mapInstanceRef.current && effectiveTracks.length > 0) {
+          // Download the upcoming frames' tiles while this one renders (fewer tile waits)
+          prefetchFollowTiles(progressValue, zoomLevel + Math.log2(mapScale), mapWidth, mapHeight);
           const center = getFollowCenter(progressValue);
 
           if (center) {

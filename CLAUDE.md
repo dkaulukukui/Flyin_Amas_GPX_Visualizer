@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 3.8.0 (as of last update)
+   - Current version: 3.9.0 (as of last update)
 
 ### Key Technical Patterns
 
@@ -77,8 +77,14 @@ The entire application is contained in `index.html` with this organization:
 - `getLegendLayout(fontSize, scale)`: legend geometry shared by the DOM legend and the canvas legend
 - **Satellite tiles** (`MAP_IMAGERY`, `mapImagery` setting, Camera tab): Esri **Clarity** (default, native to
   z19) or standard Esri World Imagery (native to z18), both with `crossOrigin: 'anonymous'` for CORS. Layers
-  live in `map._imageryLayers`; an effect shows the selected one. Standard imagery looks hazy/washed out
-  over the ocean at high zoom — that's the source photos, not a rendering bug
+  live in `map._imageryLayers`; an effect shows the selected one. Clarity tiles load through two HTTP
+  redirects (slower first load); both services send `Cache-Control: max-age=86400`
+- **Tile prefetch (v3.9.0)**: Leaflet only requests on-screen tiles, so a moving follow camera shows its
+  leading edge still loading (a visible band on mobile). `prefetchFollowTiles(fromProgress, zoom, w, h)`
+  samples `getFollowCenter` over the next `PREFETCH_LOOKAHEAD_SECONDS` of video, computes the tile URLs
+  (`getTileUrlsForView`, same template/zoom as the layer) and downloads them with `new Image()`
+  (`crossOrigin='anonymous'` so the HTTP cache entry is reused), max `PREFETCH_MAX_IN_FLIGHT` at once.
+  Called by a throttled preview effect and by `renderExportFrame`
 - Initial map center configurable via `INITIAL_MAP_CENTER` (default: Oahu, Hawaii)
 - Polylines drawn using Leaflet canvas renderer. **Track layers are persistent (v3.7.0)**: full-track
   previews are rebuilt only when tracks/visibility/scale change (`previewLayersRef`); each track's
@@ -443,7 +449,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 3.8.0**
+**Current Version: 3.9.0**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -474,6 +480,7 @@ No build process required - single HTML file is the entire app.
 - **v3.6.0**: Project files (tracks + settings), settings presets, ?project= / ?gpx= startup links
 - **v3.7.0**: Map zoom controls set the camera zoom; playback performance work (persistent track layers)
 - **v3.8.0**: Esri Clarity imagery by default (clearer water), Map Imagery choice
+- **v3.9.0**: Tile prefetch along the follow camera's path (preview + export)
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which
