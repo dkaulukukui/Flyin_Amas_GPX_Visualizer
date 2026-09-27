@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 3.0.0 (as of last update)
+   - Current version: 3.1.0 (as of last update)
 
 ### Key Technical Patterns
 
@@ -86,6 +86,12 @@ Two animation modes with different timestamp handling:
 visible points for all three modes and is used by the polyline render effect, the zoom-follow
 effect, `renderExportFrame`, and `drawTracksDirect` — change animation behavior ONLY there.
 
+**Head interpolation (v3.1.0)**: `getVisiblePoints` returns the reached GPS fixes plus one
+interpolated "head" point (`lerpPoint`) partway to the next fix — by time fraction in time-based
+modes, by fractional point count in index-based modes. Consumers treat the last returned point as
+the current position, so marker, label, and follow camera glide instead of stepping per fix.
+Interpolation only happens between adjacent timed fixes; uses precomputed `track.timesMs`.
+
 **Animation Loop**:
 - Uses `requestAnimationFrame` for smooth rendering
 - **Preview pacing matches export exactly**: `progressIncrement = (deltaTime / (exportDuration * 1000)) * 100`
@@ -95,7 +101,8 @@ effect, `renderExportFrame`, and `drawTracksDirect` — change animation behavio
 **Track trimming (v3.0.0)**:
 - `tracks` keeps the original uploaded points; per-track `trimStart`/`trimEnd` indices are set by
   the ✂ Trim sliders in the track list
-- `effectiveTracks` (useMemo) applies the trim and recomputes startTime/endTime/duration —
+- `effectiveTracks` (useMemo) applies the trim and recomputes startTime/endTime/duration, then
+  applies GPS smoothing (`smoothPoints`, v3.1.0) and precomputes `timesMs` (ms per point, NaN if missing) —
   **all** animation, alignment, zoom, stats, and export logic consumes `effectiveTracks`, never
   `tracks` directly (UI lists and labels still use `tracks`)
 
@@ -171,6 +178,8 @@ All state managed through React useState/useRef hooks:
 - `exportAspectRatio`, `exportResolution`: Export settings
 - `exportDuration`: Video/preview duration in seconds — direct user input (5-300s, default 60)
 - `labelFont`, `labelSize`: Track label styling (preview + export)
+- `trackSmoothing`: 'off' | 'light' | 'medium' | 'strong' (default 'light') — Gaussian window radius
+  from `SMOOTHING_RADIUS` (0/2/4/8 points); endpoints and timestamps preserved
 - `trimOpenId`: Track whose ✂ Trim sliders are expanded (trim values live on the track objects)
 - `exportFPS`: Target frame rate (15-60 FPS, default 30 FPS)
 - `exportQuality`: Video quality preset ('low', 'medium', 'high', 'ultra')
@@ -330,7 +339,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 3.0.0**
+**Current Version: 3.1.0**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -353,6 +362,7 @@ No build process required - single HTML file is the entire app.
 - **v2.5.0**: 9:16 vertical export format (Reels/TikTok/Shorts)
 - **v2.6.0**: Track comparison - common-point alignment with radius circle, race-from-point playback
 - **v3.0.0**: Duration input replaces speed slider; example tracks; per-track trimming; label font/size; collapsible sidebar; export ETA + leave warning; FFmpeg.wasm removed
+- **v3.1.0**: Interpolated track heads (smooth motion between GPS fixes); Track Smoothing option
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which

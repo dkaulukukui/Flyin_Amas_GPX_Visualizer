@@ -1059,6 +1059,11 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.1.0 - Smooth track motion: the moving head (line tip, marker, label, and follow camera) is now interpolated
+    //         between GPS fixes instead of snapping a whole fix per frame, removing the stutter from frames covering
+    //         uneven numbers of fixes. New Track Smoothing option (Off/Light/Medium/Strong, default Light) applies a
+    //         Gaussian moving average to remove GPS jitter; endpoints and timestamps are preserved. Applies to preview
+    //         and both export paths. Timestamps are pre-parsed once per track instead of every frame.
     // 3.0.1 - Fix blank-page load failure: pin @babel/standalone to 7.26.4. unpkg began resolving the unpinned
     //         dependency URL to @babel/standalone@8.0.2, whose in-browser transformer defaults to sourceType:"module"
     //         and emits ESM into the injected classic <script> tag ("Cannot use import statement outside a module"),
@@ -1123,7 +1128,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.0.1";
+    const APP_VERSION = "3.1.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -1151,6 +1156,43 @@
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
 
+    // Track smoothing presets: Gaussian window radius in GPS points (0 = off)
+    const SMOOTHING_RADIUS = { off: 0, light: 2, medium: 4, strong: 8 };
+
+    // Wrap a longitude difference into [-180, 180] so math across the antimeridian works
+    const wrapLonDelta = (d) => (d > 180 ? d - 360 : d < -180 ? d + 360 : d);
+
+    // Gaussian-weighted moving average over lat/lon to remove GPS jitter.
+    // The window shrinks symmetrically near the ends so the first and last
+    // points stay put. Timestamps are kept, so time-based sync is unaffected.
+    function smoothPoints(points, radius) {
+      if (radius <= 0 || points.length < 3) return points;
+      const sigma = radius / 2;
+      const weights = [];
+      for (let k = 0; k <= radius; k++) {
+        weights.push(Math.exp(-(k * k) / (2 * sigma * sigma)));
+      }
+      return points.map((p, i) => {
+        const r = Math.min(radius, i, points.length - 1 - i);
+        if (r === 0) return p;
+        let sumW = 0, sumLat = 0, sumDLon = 0;
+        for (let k = -r; k <= r; k++) {
+          const q = points[i + k];
+          const w = weights[Math.abs(k)];
+          sumW += w;
+          sumLat += w * q.lat;
+          sumDLon += w * wrapLonDelta(q.lon - p.lon);
+        }
+        return { ...p, lat: sumLat / sumW, lon: p.lon + wrapLonDelta(sumDLon / sumW) };
+      });
+    }
+
+    // Point a fraction t (0..1) of the way from a to b
+    const lerpPoint = (a, b, t) => ({
+      lat: a.lat + (b.lat - a.lat) * t,
+      lon: a.lon + wrapLonDelta(b.lon - a.lon) * t
+    });
+
     // Collapsible sidebar section with a clickable chevron header
     function CollapsibleSection({ title, defaultOpen = true, children }) {
       const [open, setOpen] = useState(defaultOpen);
@@ -1171,6 +1213,7 @@
       const [progress, setProgress] = useState(0);
       const [isRecording, setIsRecording] = useState(false);
       const [showAllTracks, setShowAllTracks] = useState(true);
+      const [trackSmoothing, setTrackSmoothing] = useState('light'); // key of SMOOTHING_RADIUS
       const [showLabels, setShowLabels] = useState(true);
       const [labelFont, setLabelFont] = useState('Arial');
       const [labelSize, setLabelSize] = useState(14); // px
@@ -1459,30 +1502,37 @@
         ));
       };
 
-      // Apply per-track trim (non-destructive): slice points and recompute times.
+      // Apply per-track trim (non-destructive), then GPS smoothing, and
+      // precompute numeric timestamps (`timesMs`, NaN when missing/invalid).
       // All animation, alignment, stats, and export logic consumes these; the
       // original uploaded points stay intact on `tracks` so trims are reversible.
       const effectiveTracks = useMemo(() => tracks.map(track => {
         const lastIdx = track.points.length - 1;
         const start = Math.max(0, Math.min(track.trimStart ?? 0, lastIdx));
         const end = Math.max(start, Math.min(track.trimEnd ?? lastIdx, lastIdx));
-        if (start === 0 && end === lastIdx) return track;
+        const isTrimmed = start > 0 || end < lastIdx;
 
-        const points = track.points.slice(start, end + 1);
-        let startTime = null;
-        let endTime = null;
-        let duration = null;
-        if (points.length > 0 && points[0].time) {
-          const trimmedStart = new Date(points[0].time);
-          const trimmedEnd = new Date(points[points.length - 1].time);
-          if (!isNaN(trimmedStart) && !isNaN(trimmedEnd)) {
-            startTime = trimmedStart;
-            endTime = trimmedEnd;
-            duration = endTime - startTime;
+        let points = isTrimmed ? track.points.slice(start, end + 1) : track.points;
+        let { startTime, endTime, duration } = track;
+        if (isTrimmed) {
+          startTime = null;
+          endTime = null;
+          duration = null;
+          if (points.length > 0 && points[0].time) {
+            const trimmedStart = new Date(points[0].time);
+            const trimmedEnd = new Date(points[points.length - 1].time);
+            if (!isNaN(trimmedStart) && !isNaN(trimmedEnd)) {
+              startTime = trimmedStart;
+              endTime = trimmedEnd;
+              duration = endTime - startTime;
+            }
           }
         }
-        return { ...track, points, startTime, endTime, duration };
-      }), [tracks]);
+
+        points = smoothPoints(points, SMOOTHING_RADIUS[trackSmoothing] ?? 0);
+        const timesMs = points.map(p => (p.time ? new Date(p.time).getTime() : NaN));
+        return { ...track, points, startTime, endTime, duration, timesMs };
+      }), [tracks, trackSmoothing]);
 
       // For each track, the point matched inside the common-point circle (or null if none)
       const alignmentMatches = useMemo(() => {
@@ -1515,7 +1565,7 @@
           const match = alignmentMatches[track.id];
           if (!match) return;
           maxRemainingPoints = Math.max(maxRemainingPoints, track.points.length - 1 - match.index);
-          const alignTime = track.points[match.index].time ? new Date(track.points[match.index].time).getTime() : NaN;
+          const alignTime = track.timesMs[match.index];
           if (!isNaN(alignTime) && track.endTime) {
             spanMs = Math.max(spanMs, track.endTime.getTime() - alignTime);
           }
@@ -1526,7 +1576,55 @@
       // Compute which points of a track are visible at the given progress.
       // Single source of truth shared by browser playback, zoom-follow, and
       // both video export paths.
+      //
+      // The last returned point is an interpolated "head" between the last
+      // reached GPS fix and the next one, so the line, marker, label, and
+      // follow camera glide continuously instead of stepping a whole fix at a
+      // time (which made motion jumpy, especially when zoomed in or when a
+      // frame covers a non-integer number of fixes).
       const getVisiblePoints = (track, progressPercent) => {
+        const { points, timesMs } = track;
+
+        // Slice points[from..i] and append the head fraction `frac` of the way to points[i + 1]
+        const sliceWithHead = (from, i, frac) => {
+          const visible = points.slice(from, i + 1);
+          if (frac > 0 && i + 1 < points.length) {
+            visible.push(lerpPoint(points[i], points[i + 1], Math.min(frac, 1)));
+          }
+          return visible;
+        };
+
+        // Time-based position: last fix at or before `targetMs` (scanning from
+        // `from`, skipping untimed fixes), plus the fraction toward the next fix
+        const sliceAtTime = (from, targetMs) => {
+          let lastIndex = from;
+          for (let i = from + 1; i < points.length; i++) {
+            const t = timesMs[i];
+            if (isNaN(t)) continue;
+            if (t > targetMs) {
+              // Interpolate only between adjacent fixes; a gap of untimed
+              // points would otherwise be cut across
+              const lastT = timesMs[lastIndex];
+              const frac = (i === lastIndex + 1 && !isNaN(lastT) && t > lastT)
+                ? (targetMs - lastT) / (t - lastT)
+                : 0;
+              return sliceWithHead(from, lastIndex, frac);
+            }
+            lastIndex = i;
+          }
+          return points.slice(from, lastIndex + 1);
+        };
+
+        // Index-based position: `exactCount` fixes reached (fractional part
+        // becomes the head), counted from `from`
+        const sliceAtCount = (from, exactCount) => {
+          if (exactCount <= 0) return [];
+          const count = Math.floor(exactCount);
+          if (count === 0) return [];
+          const lastIndex = Math.min(from + count - 1, points.length - 1);
+          return sliceWithHead(from, lastIndex, exactCount - count);
+        };
+
         // Aligned mode: race all matched tracks from the common point using
         // real elapsed time from each track's own crossing
         if (alignmentActive) {
@@ -1534,27 +1632,15 @@
           if (!match) return []; // no point within radius - excluded from the race
           const alignIdx = match.index;
 
-          const alignPointTime = track.points[alignIdx].time ? new Date(track.points[alignIdx].time).getTime() : NaN;
+          const alignPointTime = timesMs[alignIdx];
           if (alignedTiming.spanMs > 0 && !isNaN(alignPointTime)) {
             const tau = (progressPercent / 100) * alignedTiming.spanMs;
-            let lastIndex = alignIdx;
-            for (let i = alignIdx + 1; i < track.points.length; i++) {
-              if (track.points[i].time) {
-                const elapsed = new Date(track.points[i].time).getTime() - alignPointTime;
-                if (elapsed <= tau) {
-                  lastIndex = i;
-                } else {
-                  break;
-                }
-              }
-            }
-            return track.points.slice(alignIdx, lastIndex + 1);
+            return sliceAtTime(alignIdx, alignPointTime + tau);
           }
 
-          // No usable timestamps - pace by point index instead
-          const count = Math.floor((progressPercent / 100) * alignedTiming.maxRemainingPoints);
-          const lastIndex = Math.min(alignIdx + count, track.points.length - 1);
-          return track.points.slice(alignIdx, lastIndex + 1);
+          // No usable timestamps - pace by point index instead (the align
+          // point itself is always shown, hence the +1)
+          return sliceAtCount(alignIdx, (progressPercent / 100) * alignedTiming.maxRemainingPoints + 1);
         }
 
         if (animationStyle === 'sequential') {
@@ -1562,9 +1648,8 @@
           const tracksBeforeThis = effectiveTracks.slice(0, trackIndex);
           const totalPointsBefore = tracksBeforeThis.reduce((sum, t) => sum + t.points.length, 0);
           const totalPoints = effectiveTracks.reduce((sum, t) => sum + t.points.length, 0);
-          const currentTotalPoint = Math.floor((progressPercent / 100) * totalPoints);
-          const pointsForThisTrack = Math.max(0, currentTotalPoint - totalPointsBefore);
-          return track.points.slice(0, Math.min(pointsForThisTrack, track.points.length));
+          const exactTotalPoint = (progressPercent / 100) * totalPoints;
+          return sliceAtCount(0, Math.min(exactTotalPoint - totalPointsBefore, points.length));
         }
 
         // Simultaneous - use absolute time-based synchronization if available
@@ -1580,25 +1665,11 @@
             return [];
           }
 
-          let pointIndex = 0;
-          for (let i = 0; i < track.points.length; i++) {
-            if (track.points[i].time) {
-              const pointTime = new Date(track.points[i].time);
-
-              if (pointTime.getTime() <= currentAbsoluteTime) {
-                pointIndex = i;
-              } else {
-                break;
-              }
-            }
-          }
-
-          return track.points.slice(0, pointIndex + 1);
+          return sliceAtTime(0, currentAbsoluteTime);
         }
 
         // Fallback to percentage-based if no time data
-        const pointCount = Math.floor((progressPercent / 100) * track.points.length);
-        return track.points.slice(0, pointCount);
+        return sliceAtCount(0, (progressPercent / 100) * points.length);
       };
 
       const animate = (timestamp) => {
@@ -3349,7 +3420,25 @@
                         <span>Show full track preview</span>
                       </label>
                     </div>
-                    
+
+                    <div className="control-group">
+                      <div className="control-label">Track Smoothing</div>
+                      <select
+                        className="select"
+                        value={trackSmoothing}
+                        onChange={(e) => setTrackSmoothing(e.target.value)}
+                        disabled={isRecording}
+                      >
+                        <option value="off">Off (raw GPS points)</option>
+                        <option value="light">Light</option>
+                        <option value="medium">Medium</option>
+                        <option value="strong">Strong</option>
+                      </select>
+                      <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
+                        Evens out GPS jitter so lines and the follow camera don't wobble. Stronger settings round off sharp turns.
+                      </p>
+                    </div>
+
                     <div className="control-group">
                       <label className="checkbox-group">
                         <input

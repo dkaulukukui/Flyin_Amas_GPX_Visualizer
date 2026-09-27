@@ -79,6 +79,7 @@ A beautiful, interactive web application for visualizing and animating GPS track
   - **Multiple Formats**: MP4, WebM (VP9), or WebM (VP8) depending on browser
 - **⏱️ Duration Control** - Set the animation/video length directly (5-300 seconds)
 - **✂️ Track Trimming** - Cut unwanted points from the start or end of any track (reversible)
+- **〰️ Smooth Motion** - Track heads glide between GPS points, and optional Track Smoothing (Off/Light/Medium/Strong) removes GPS jitter
 - **🔤 Label Styling** - Pick the font and size of on-map track labels
 - **🌺 Example Tracks** - Bundled sample tracks load on startup and clear when you upload your own
 - **🔍 Zoom to Track** - Follow the action with adjustable zoom level (12-18)

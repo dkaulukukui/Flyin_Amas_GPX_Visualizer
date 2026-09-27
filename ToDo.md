@@ -1,5 +1,11 @@
 To Do List:
 
+## Done in v3.1.0
+
+- ~~add smoothing or interpolation to tracks so that tracks arent jumpy~~ — Done. Track heads are
+  interpolated between GPS fixes (no more per-frame stepping), plus a Track Smoothing option
+  (Off/Light/Medium/Strong, default Light) under Display Options to remove GPS jitter.
+
 ## Done in v3.0.0
 
 - ~~adjust the speed to be a video duration input instead of a slider, default to 60s~~ — Done.
@@ -33,7 +39,7 @@ To Do List:
 ## Remaining
 
 (nothing queued — add new ideas here)
-- add smoothing or interpolation to tracks so that tracks arent jumpy
 - allow user in increase font size of legend
 - browser playback zoom level doesnt match exported video
 - should we adjust browser playback ascpect ratio to match output? sometimes its hard to see what the exportd video will look like this would fix that.
+- add feature to show statistics on screen.  statistics to show:  Timer, Speed, distance between two tracks
