@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 3.7.0 (as of last update)
+   - Current version: 3.8.0 (as of last update)
 
 ### Key Technical Patterns
 
@@ -75,8 +75,10 @@ The entire application is contained in `index.html` with this organization:
 - `getFitView(bounds, scale)`: fit-all view snapped to a whole reference zoom — used by the preview
   zoom effect and renderExportFrame so both frame the same area
 - `getLegendLayout(fontSize, scale)`: legend geometry shared by the DOM legend and the canvas legend
-- **Satellite tiles**: ArcGIS World Imagery with `crossOrigin: 'anonymous'` for CORS
-- **Backup tiles**: OpenStreetMap as fallback layer
+- **Satellite tiles** (`MAP_IMAGERY`, `mapImagery` setting, Camera tab): Esri **Clarity** (default, native to
+  z19) or standard Esri World Imagery (native to z18), both with `crossOrigin: 'anonymous'` for CORS. Layers
+  live in `map._imageryLayers`; an effect shows the selected one. Standard imagery looks hazy/washed out
+  over the ocean at high zoom — that's the source photos, not a rendering bug
 - Initial map center configurable via `INITIAL_MAP_CENTER` (default: Oahu, Hawaii)
 - Polylines drawn using Leaflet canvas renderer. **Track layers are persistent (v3.7.0)**: full-track
   previews are rebuilt only when tracks/visibility/scale change (`previewLayersRef`); each track's
@@ -335,9 +337,8 @@ git push origin master
 ## Common Modifications
 
 ### Changing Map Tiles
-Edit tile layer URLs (search for "ArcGIS" or "openstreetmap"):
-- Satellite layer: ArcGIS World Imagery
-- Backup layer: OpenStreetMap
+Edit `MAP_IMAGERY` (top of the script): each entry has `label`, `url`, `maxNativeZoom`, `attribution`.
+Any source must send CORS headers (`Access-Control-Allow-Origin`) or exports will fail.
 - **Must include** `crossOrigin: 'anonymous'` for video export
 
 ### Adjusting Animation
@@ -442,7 +443,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 3.7.0**
+**Current Version: 3.8.0**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -472,6 +473,7 @@ No build process required - single HTML file is the entire app.
 - **v3.5.0**: Tabbed sidebar (Tracks/Camera/Overlays/Export), transport bar under the preview, remembered settings
 - **v3.6.0**: Project files (tracks + settings), settings presets, ?project= / ?gpx= startup links
 - **v3.7.0**: Map zoom controls set the camera zoom; playback performance work (persistent track layers)
+- **v3.8.0**: Esri Clarity imagery by default (clearer water), Map Imagery choice
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which

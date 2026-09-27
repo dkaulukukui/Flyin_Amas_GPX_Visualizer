@@ -1,5 +1,11 @@
 To Do List:
 
+## Done in v3.8.0
+
+- Tiles still looked a little washed out on mobile after v3.7.0 — traced to the standard Esri imagery itself
+  (hazy, sun-glinted, pale ocean photos and mosaic seams at zoom 16-18). Switched the default to Esri
+  Clarity imagery (clean water, native to zoom 19) with a Map Imagery choice in the Camera tab.
+
 ## Done in v3.7.0
 
 - ~~make the zoom controls on the map adjust the camera zoom setting as well~~ — Done. +/-, mouse wheel,

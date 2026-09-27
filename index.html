@@ -1220,6 +1220,11 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.8.0 - Map imagery: new default Esri Clarity satellite imagery plus a "Map Imagery" choice (Camera tab) to switch
+    //         back to standard Esri World Imagery. Investigating the washed-out look on mobile showed it is the
+    //         standard imagery itself: at zoom 16-18 it often serves hazy / sun-glinted, pale ocean photos and
+    //         visible mosaic seams. Clarity's water is clean and consistent and has native detail to zoom 19 (so 4K
+    //         exports at zoom 18 aren't upscaled). Unused OpenStreetMap backup layer removed.
     // 3.7.0 - Map zoom controls (+/-, wheel, pinch) now set the camera Zoom Level while the follow camera is running
     //         (previously undone on the next frame); range widened to 10-18. Playback performance (mobile "white
     //         map" investigation): track layers are created once and moved each frame instead of rebuilt (~10k
@@ -1330,12 +1335,32 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.7.0";
+    const APP_VERSION = "3.8.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
     const INITIAL_MAP_CENTER = [21.284, -157.718];
     const INITIAL_MAP_ZOOM = 13;
+
+    // Satellite imagery choices (v3.8.0). Both are Esri services that allow
+    // cross-origin use (required for video export). Clarity is the default: at
+    // high zoom the standard World Imagery often shows hazy, sun-glinted,
+    // washed-out ocean photos and mosaic seams; Clarity's water is clean and
+    // consistent, with native detail to zoom 19.
+    const MAP_IMAGERY = {
+      clarity: {
+        label: 'Esri Clarity (clearer water)',
+        url: 'https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        maxNativeZoom: 19,
+        attribution: 'Esri, Maxar, Earthstar Geographics'
+      },
+      standard: {
+        label: 'Esri World Imagery (standard)',
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        maxNativeZoom: 18,
+        attribution: 'Esri, DigitalGlobe, GeoEye, Earthstar Geographics'
+      }
+    };
 
     // Camera (follow) zoom range: the Zoom Level slider, and map +/- / wheel /
     // pinch zooms while the follow camera is active, stay within this
@@ -1662,6 +1687,7 @@
       const [progress, setProgress] = useState(0);
       const [isRecording, setIsRecording] = useState(false);
       const [showAllTracks, setShowAllTracks] = usePersistentState(settingsRegistry, 'showAllTracks', true);
+      const [mapImagery, setMapImagery] = usePersistentState(settingsRegistry, 'mapImagery', 'clarity'); // key of MAP_IMAGERY
       const [trackSmoothing, setTrackSmoothing] = usePersistentState(settingsRegistry, 'trackSmoothing', 'light'); // key of SMOOTHING_RADIUS
       const [showLabels, setShowLabels] = usePersistentState(settingsRegistry, 'showLabels', true);
       const [labelFont, setLabelFont] = usePersistentState(settingsRegistry, 'labelFont', 'Arial');
@@ -2021,35 +2047,23 @@
             }
           });
 
-          // Use CORS-enabled satellite tiles from multiple sources layered
-          // Base layer: OpenStreetMap (CORS enabled, always works)
-          const osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors',
-            maxNativeZoom: 19,
-            maxZoom: 20,
-            crossOrigin: 'anonymous'
-          });
-
-          // Satellite layer: ESRI World Imagery with CORS
-          const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            attribution: 'Esri, DigitalGlobe, GeoEye, Earthstar Geographics',
-            maxNativeZoom: 18,
-            maxZoom: 20, // high-res exports zoom past 18; upscale the last native level
-            crossOrigin: 'anonymous'
-          });
-
-          // Try satellite first, but have OSM as backup
-          satelliteLayer.addTo(map);
-
-          // Listen for tile load errors and fall back to OSM if CORS fails
-          satelliteLayer.on('tileerror', function(error) {
-            console.warn('Satellite tile error, this may affect video export');
+          // Satellite tile layers (see MAP_IMAGERY); the imagery effect below
+          // shows the selected one. crossOrigin is required for video export.
+          map._imageryLayers = {};
+          Object.entries(MAP_IMAGERY).forEach(([key, source]) => {
+            const layer = L.tileLayer(source.url, {
+              attribution: source.attribution,
+              maxNativeZoom: source.maxNativeZoom,
+              maxZoom: 20, // high-res exports zoom past native levels; upscale the last one
+              crossOrigin: 'anonymous'
+            });
+            layer.on('tileerror', () => {
+              console.warn(`${source.label}: tile failed to load, this may affect video export`);
+            });
+            map._imageryLayers[key] = layer;
           });
 
           mapInstanceRef.current = map;
-
-          // Store layer references for potential switching
-          map._baseLayers = { satellite: satelliteLayer, osm: osmLayer };
         }
         
         return () => {
@@ -2058,6 +2072,17 @@
           }
         };
       }, []);
+
+      // Show the selected satellite imagery (Camera tab)
+      useEffect(() => {
+        const map = mapInstanceRef.current;
+        if (!map || !map._imageryLayers) return;
+        const selected = map._imageryLayers[mapImagery] || map._imageryLayers.clarity;
+        Object.values(map._imageryLayers).forEach(layer => {
+          if (layer !== selected && map.hasLayer(layer)) map.removeLayer(layer);
+        });
+        if (!map.hasLayer(selected)) selected.addTo(map);
+      }, [mapImagery]);
 
       const generateRandomColor = () => {
         const hue = Math.floor(Math.random() * 360);
@@ -4681,6 +4706,23 @@
 
                 {activeTab === 'camera' && tracks.length > 0 && (
                   <div className="controls">
+                    <div className="control-group">
+                      <div className="control-label">Map Imagery</div>
+                      <select
+                        className="select"
+                        value={mapImagery}
+                        onChange={(e) => setMapImagery(e.target.value)}
+                        disabled={isRecording}
+                      >
+                        {Object.entries(MAP_IMAGERY).map(([key, source]) => (
+                          <option key={key} value={key}>{source.label}</option>
+                        ))}
+                      </select>
+                      <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
+                        Clarity shows cleaner, deeper-blue water when zoomed in; the standard imagery can look hazy or washed out over the ocean.
+                      </p>
+                    </div>
+
                     <div className="control-group">
                       <label className="checkbox-group">
                         <input

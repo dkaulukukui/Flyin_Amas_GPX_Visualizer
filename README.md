@@ -212,7 +212,7 @@ npx http-server
 
 - **React 18** - UI framework (loaded via CDN)
 - **Leaflet 1.9.4** - Interactive maps with canvas rendering
-- **ArcGIS Satellite Tiles** - High-quality imagery with CORS support
+- **Esri Satellite Imagery** - Clarity imagery by default (clean, consistent water when zoomed in), or standard World Imagery (Camera tab)
 - **WebCodecs API + mp4-muxer** - Hardware-accelerated H.264 encoding into MP4 (preferred export path)
 - **MediaRecorder API** - Browser-native video encoding (fallback export path, WebM)
 - **Canvas API** - Frame-by-frame video rendering with precise timing
