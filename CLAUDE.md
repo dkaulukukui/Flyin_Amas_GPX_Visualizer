@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 3.10.1 (as of last update)
+   - Current version: 3.11.0 (as of last update)
 
 ### Key Technical Patterns
 
@@ -55,13 +55,14 @@ The entire application is contained in `index.html` with this organization:
 
 #### Map Rendering (Leaflet Integration)
 - Map initialized with `preferCanvas: true` for better video export
-- **Track layer renderer (v3.10.0)**: `L.svg()` (the map is created with `renderer: trackRenderer`). With the
-  canvas renderer, iPhone Safari showed a darker box exactly covering the bounding box of the travelled
-  tracks (rest of the map washed out) — WebKit canvas compositing of semi-transparent strokes; full-canvas
-  repaints didn't help. SVG avoids it and is faster. `?renderer=canvas` restores the canvas renderer
-  (full repaint, 1x) for comparison. Exports never depend on these layers: `captureFrame` draws tracks with
-  `drawTracksDirect` (it still copies any Leaflet canvases if present). Don't reintroduce a
-  "<canvas> required" check in `startRecording`
+- **Compositing layers (v3.11.0) — do not remove**: `.leaflet-tile-pane, .leaflet-overlay-pane,
+  .leaflet-marker-pane { will-change: transform }`. With Leaflet 3D disabled, tiles and tracks were painted
+  as one layer and iPhone Safari re-rendered the tiles under the changing tracks' bounding box differently
+  (a darker box following the boat, rest washed out). Confirmed on a real iPhone. Doesn't bring back the
+  desktop tile seams (those came from per-tile 3D layers)
+- **Track layer renderer (v3.10.0)**: `L.svg()` — faster than canvas in phone emulation. Exports never depend
+  on these layers: `captureFrame` draws tracks with `drawTracksDirect` (it still copies any Leaflet canvases
+  if present). Don't reintroduce a "<canvas> required" check in `startRecording`
 - `window.L_DISABLE_3D = true` is set before Leaflet loads (tiles positioned with left/top, not
   per-tile 3D layers) — required for seam-free CSS scaling of the preview; it also forces
   whole-number zoom (Leaflet ignores `zoomSnap` without 3D), which the design relies on
@@ -456,7 +457,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 3.10.1**
+**Current Version: 3.11.0**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -490,7 +491,8 @@ No build process required - single HTML file is the entire app.
 - **v3.9.0**: Tile prefetch along the follow camera's path (preview + export)
 - **v3.9.1**: Track canvas always repaints in full at 1x (did not fix the iPhone artifact)
 - **v3.10.0**: Track layers drawn with the SVG renderer (did not fix the iPhone artifact)
-- **v3.10.1**: `?debug=` diagnostic switches (notracks, smooth, layers, 3d) — see the inline script in `<head>`
+- **v3.10.1**: `?debug=` diagnostic switches used to bisect the iPhone artifact on the device (removed in v3.11.0)
+- **v3.11.0**: Tile/track/label panes on their own compositing layers — the actual fix for the iPhone shaded box
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which

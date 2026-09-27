@@ -1,11 +1,14 @@
 To Do List:
 
-## In progress (v3.10.1)
+## Done in v3.11.0
 
-- iPhone Safari shaded box still present with SVG track layers (so not the track renderer). Current
-  theory: with Leaflet 3D disabled (v3.2) tiles and tracks share one painted layer, and Safari re-renders
-  the tiles under the changing tracks' bounding box differently. Diagnostic `?debug=` switches deployed to
-  bisect on the phone: `notracks`, `smooth`, `layers`, `3d` (combinable, shown next to the version badge).
+- **Fixed** the iPhone Safari shaded box (darker box over the travelled tracks' bounding box, rest washed
+  out, edge following the boat). Cause: with Leaflet 3D disabled (v3.2), tiles and track layers were
+  painted as one layer and Safari re-rendered the tiles under the changing tracks differently. Fix: tile,
+  track, and label panes get their own compositing layers (`will-change: transform`). Found by bisecting
+  on the phone with the v3.10.1 `?debug=` switches (`layers` removed the box); switches now removed.
+  Earlier attempts that didn't address this symptom: imagery (v3.8.0), tile prefetch (v3.9.0, still
+  useful), full canvas repaint (v3.9.1), SVG track layers (v3.10.0, kept - faster).
 
 ## Done in v3.10.0
 

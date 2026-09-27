@@ -7,23 +7,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <!-- Position map tiles without per-tile 3D layers: the preview map is CSS-scaled
        to fit (see .map-surface), and separately composited tiles show hairline seams -->
-  <script>
-    // Diagnostic switches for the iPhone Safari shaded-box issue (v3.10.1), e.g.
-    // ?debug=notracks  or  ?debug=smooth,layers  - shown next to the version badge.
-    //   notracks - hide the track/label layers (does the box still appear?)
-    //   smooth   - undo Leaflet's Safari-only "image-rendering: -webkit-optimize-contrast" on tiles
-    //   layers   - give tiles, tracks, and labels their own compositing layers
-    //   3d       - keep Leaflet's 3D tile positioning (normally disabled, see below)
-    window.DEBUG_FLAGS = (new URLSearchParams(location.search).get('debug') || '').split(',').map(f => f.trim()).filter(Boolean);
-    if (!window.DEBUG_FLAGS.includes('3d')) window.L_DISABLE_3D = true;
-    (function () {
-      var css = [];
-      if (window.DEBUG_FLAGS.includes('notracks')) css.push('.leaflet-overlay-pane, .leaflet-marker-pane { display: none !important; }');
-      if (window.DEBUG_FLAGS.includes('smooth')) css.push('.leaflet-container .leaflet-tile { image-rendering: auto !important; }');
-      if (window.DEBUG_FLAGS.includes('layers')) css.push('.leaflet-tile-pane, .leaflet-overlay-pane, .leaflet-marker-pane { will-change: transform; }');
-      if (css.length) document.head.appendChild(Object.assign(document.createElement('style'), { textContent: css.join('\n') }));
-    })();
-  </script>
+  <script>window.L_DISABLE_3D = true;</script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -199,6 +183,17 @@
        grey, so a camera moving faster than tiles load doesn't flash white */
     .leaflet-container {
       background: #1a1a1a;
+    }
+
+    /* iPhone Safari: tiles, tracks, and labels each get their own compositing
+       layer. With Leaflet's 3D positioning disabled they were painted as one
+       layer, and Safari re-rendered the tiles under the changing tracks'
+       bounding box differently from the rest - a shaded box that followed the
+       boat. Confirmed on a real iPhone (v3.10.1 ?debug=layers). */
+    .leaflet-tile-pane,
+    .leaflet-overlay-pane,
+    .leaflet-marker-pane {
+      will-change: transform;
     }
 
     /* The map renders at the reference frame size (long side 1920px) and is
@@ -1236,6 +1231,11 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.11.0 - Fix the iPhone Safari shaded box for real: the tile, track, and label panes now each get their own
+    //          compositing layer (will-change: transform). With Leaflet 3D disabled they were painted as one layer
+    //          and Safari re-rendered the tiles under the changing tracks' bounding box differently. Found with the
+    //          3.10.1 ?debug= switches on the user's iPhone ("layers" removed the box). Debug switches and the
+    //          ?renderer=canvas option removed; track layers stay SVG.
     // 3.10.1 - Diagnostic ?debug= switches (notracks, smooth, layers, 3d) to bisect the iPhone Safari shaded box on a
     //          real device; active switches are shown next to the version badge. No behavior change without ?debug=.
     // 3.10.0 - Track layers are now drawn with Leaflet's SVG renderer instead of canvas. A phone screenshot showed the
@@ -1371,7 +1371,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.10.1";
+    const APP_VERSION = "3.11.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -2067,23 +2067,10 @@
       useEffect(() => {
         // Initialize map
         if (!mapInstanceRef.current) {
-          // Track layers are drawn as SVG (v3.10.0). With Leaflet's canvas renderer,
-          // iPhone Safari showed a box-shaped shaded area exactly covering the
-          // bounding box of the travelled tracks (the rest of the map looked
-          // washed out) - WebKit's canvas compositing of the semi-transparent
-          // strokes, unaffected by full repaints. SVG avoids canvas entirely.
-          // Exports don't use these layers (drawTracksDirect draws the tracks).
-          // ?renderer=canvas switches back to the canvas renderer for comparison.
-          const useCanvasRenderer = new URLSearchParams(window.location.search).get('renderer') === 'canvas';
-          let trackRenderer;
-          if (useCanvasRenderer) {
-            L.Browser.retina = false; // canvas at 1x: the preview is shown scaled down anyway
-            trackRenderer = L.canvas();
-            trackRenderer._extendRedrawBounds = () => {}; // always repaint in full
-          } else {
-            trackRenderer = L.svg();
-          }
-          const map = L.map('map', { preferCanvas: useCanvasRenderer, renderer: trackRenderer }).setView(INITIAL_MAP_CENTER, INITIAL_MAP_ZOOM);
+          // Track layers are drawn as SVG (faster than canvas here in phone
+          // emulation). Exports don't use these layers (drawTracksDirect draws
+          // the tracks into the video).
+          const map = L.map('map', { renderer: L.svg() }).setView(INITIAL_MAP_CENTER, INITIAL_MAP_ZOOM);
           // Lower-right corner belongs to the watermark
           map.attributionControl.setPosition('topright');
 
@@ -4443,7 +4430,7 @@
               <p>Upload your GPX files and create animated track videos</p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center' }}>
-              <div className="version">v{APP_VERSION}{window.DEBUG_FLAGS.length > 0 ? ` \u00b7 debug: ${window.DEBUG_FLAGS.join('+')}` : ''}</div>
+              <div className="version">v{APP_VERSION}</div>
               <button className="help-btn" onClick={toggleHelpModal}>
                 ❓ Help
               </button>
