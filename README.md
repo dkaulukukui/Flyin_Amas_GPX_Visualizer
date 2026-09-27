@@ -109,6 +109,7 @@ Browsers can't open files from your computer by path — use *Open* or drag and 
 - **💾 Projects, Presets & Links** - Save tracks + all settings to one project file to reproduce a video exactly, save settings-only presets, or auto-load tracks/projects from a link
 - **🗂️ Tabbed Settings** - Tracks / Camera / Overlays / Export tabs, playback controls under the preview, and your settings remembered between visits
 - **📊 Scoreboard & Stats** - Race timer, speed, distance, heart rate, stroke rate, and the gap between two tracks, in one on-video scoreboard (Imperial or Metric), with an adjustable start point
+- **🏁 Leaderboard** - Place a finish point and a live leaderboard ranks the tracks by distance to go, locking in finishers with their finish times (optional finish flag on the map)
 - **💧 Watermark** - "Made at Flyinamas.com" in the lower-right corner by default; change the text, size, and opacity, or turn it off
 - **🖼️ What You See Is What You Export** - The preview is framed to the video's aspect ratio and matches the exported video exactly, at any resolution
 - **🔤 Label Styling** - Pick the font and size of on-map track labels

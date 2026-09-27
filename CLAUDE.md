@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 3.12.0 (as of last update)
+   - Current version: 3.13.0 (as of last update)
 
 ### Key Technical Patterns
 
@@ -180,6 +180,22 @@ Interpolation only happens between adjacent timed fixes; uses precomputed `track
   between the two `gapTracks` heads
 - `statsStartProgress`: timer and distance are measured from this progress ("Set start here" button,
   orange marker on the playback bar); timer is negative before it, distance 0
+
+**Leaderboard (v3.13.0)** — a separate overlay from the scoreboard:
+- `finishPoint` ({lat, lng}, per race, saved in projects as `video.finish`) is placed via `isPickingFinish`
+  (map click, like the common-point picker; only one picking mode at a time)
+- `finishArrivals` (useMemo): per track, the first point inside `finishRadius` *after having been outside it*,
+  searching from the track's position at `statsStartProgress` (so loop courses and pre-start passes don't count)
+- `computeLeaderboard(progress)`: finished tracks first (by finish time on the scoreboard clock via
+  `getRaceClockAtTrackTime`, shown `⚑ h:mm:ss` in gold), then unfinished by straight-line distance to the
+  finish (`formatShortDistance`, stats units), then not-yet-started ("—")
+- `drawLeaderboard(ctx, w, h, scale, progress, { avoid, bottomReserve })` draws the panel for both the preview
+  (`leaderboardCanvasRef`, via the shared panel scratch/blit effect) and `captureFrame`; when it shares a corner
+  with the scoreboard it stacks beside it (`avoid` = scoreboard bounds)
+- Finish flag: `drawFinishFlag` draws it in export frames; the preview uses the same drawing rendered to an
+  image as a Leaflet marker. The dashed radius circle is preview-only (removed while rendering)
+- Settings (remembered + in projects): `showLeaderboard`, `leaderboardPosition` (default top-right),
+  `leaderboardSize`, `leaderboardFont`, `finishRadius` (default 30 m), `showFinishFlag`
 
 **Visual Elements**:
 - Full track preview (dimmed, togglable): Shows complete path at 30% opacity
@@ -459,7 +475,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 3.12.0**
+**Current Version: 3.13.0**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -497,6 +513,7 @@ No build process required - single HTML file is the entire app.
 - **v3.11.0**: Tile/track/label panes on their own compositing layers — fixed the iPhone shaded box but tore track lines
 - **v3.11.1**: Only the tile pane on its own compositing layer; temporary `?debug=` switches (overlay, markers, canvas)
 - **v3.12.0**: Canvas track renderer + tile-pane layer, confirmed clean on iPhone; switches removed
+- **v3.13.0**: Leaderboard overlay (finish point, live ranking, finish lock-in, finish flag)
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which

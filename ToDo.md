@@ -1,5 +1,10 @@
 To Do List:
 
+## Done in v3.13.0
+
+- Leaderboard overlay: place a finish point; a separate panel ranks tracks by distance to it and re-orders
+  live; tracks reaching the finish radius lock in by finish time; own position/size/font; optional finish flag.
+
 ## Done in v3.12.0
 
 - iPhone Safari rendering confirmed clean on the phone: tile pane on its own compositing layer (no shaded

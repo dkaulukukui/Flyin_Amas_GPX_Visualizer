@@ -1232,6 +1232,11 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.13.0 - Leaderboard overlay (Overlays tab): place a finish point on the map and a separate panel ranks all
+    //          tracks by straight-line distance to it, re-ordering live. A track that arrives within the finish radius
+    //          (after having been outside it, from the stats start on) is locked in by finish time (scoreboard clock).
+    //          Own position / size / font; stacks beside the scoreboard if they share a corner. Optional checkered
+    //          finish flag in preview and video. Finish point saved in projects; settings remembered.
     // 3.12.0 - iPhone Safari rendering settled (confirmed on the phone with the 3.11.1 switches): track layers use
     //          Leaflet's canvas renderer again (SVG lines left torn copies ahead of the boats), and only the tile pane
     //          has its own compositing layer (fixes the shaded box). Diagnostic ?debug= switches removed.
@@ -1379,7 +1384,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.12.0";
+    const APP_VERSION = "3.13.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -1636,6 +1641,38 @@
       { value: 'Verdana', label: 'Verdana' }
     ];
 
+    // Leaderboard (v3.13.0): tracks ranked by distance to a finish point the
+    // user places; a track that arrives within the finish radius is locked in
+    // by finish time
+    const DEFAULT_FINISH_RADIUS = 30; // meters
+    const FINISH_FLAG_SIZE = 30; // reference px (pole height)
+
+    // Checkered finish flag with its pole's foot at (x, y); `size` = pole height.
+    // Used for the export frames and (rendered to an image) the preview marker.
+    function drawFinishFlag(ctx, x, y, size) {
+      const poleW = Math.max(2, size * 0.08);
+      const flagW = size * 0.72;
+      const flagH = size * 0.48;
+      const cols = 4;
+      const rows = 3;
+      ctx.save();
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = Math.max(1, size * 0.05);
+      ctx.fillRect(x - poleW / 2, y - size, poleW, size);
+      ctx.strokeRect(x - poleW / 2, y - size, poleW, size);
+      const fx = x + poleW / 2;
+      const fy = y - size;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          ctx.fillStyle = (r + c) % 2 === 0 ? '#000000' : '#ffffff';
+          ctx.fillRect(fx + (c * flagW) / cols, fy + (r * flagH) / rows, flagW / cols + 0.5, flagH / rows + 0.5);
+        }
+      }
+      ctx.strokeRect(fx, fy, flagW, flagH);
+      ctx.restore();
+    }
+
     // Sidebar tabs (v3.5.0)
     const SIDEBAR_TABS = [
       { id: 'tracks', label: 'Tracks' },
@@ -1771,6 +1808,14 @@
       const [statsStartProgress, setStatsStartProgress] = useState(0); // progress % where timer/distance start
       const [statsGapIds, setStatsGapIds] = useState([null, null]); // tracks for the gap stat (null = default)
       const [scoreboardFont, setScoreboardFont] = usePersistentState(settingsRegistry, 'scoreboardFont', LEGEND_FONT);
+      const [showLeaderboard, setShowLeaderboard] = usePersistentState(settingsRegistry, 'showLeaderboard', true);
+      const [leaderboardPosition, setLeaderboardPosition] = usePersistentState(settingsRegistry, 'leaderboardPosition', 'top-right');
+      const [leaderboardSize, setLeaderboardSize] = usePersistentState(settingsRegistry, 'leaderboardSize', 15); // reference px
+      const [leaderboardFont, setLeaderboardFont] = usePersistentState(settingsRegistry, 'leaderboardFont', LEGEND_FONT);
+      const [finishRadius, setFinishRadius] = usePersistentState(settingsRegistry, 'finishRadius', DEFAULT_FINISH_RADIUS); // meters
+      const [showFinishFlag, setShowFinishFlag] = usePersistentState(settingsRegistry, 'showFinishFlag', true);
+      const [finishPoint, setFinishPoint] = useState(null); // {lat, lng} - per race (saved in projects)
+      const [isPickingFinish, setIsPickingFinish] = useState(false);
       const [matchVideoFrame, setMatchVideoFrame] = usePersistentState(settingsRegistry, 'matchVideoFrame', true); // letterbox preview to export aspect ratio
       const [stageSize, setStageSize] = useState({ width: 0, height: 0 }); // map area available for the preview
       const [exportScale, setExportScale] = useState(null); // export map scale (getExportRenderPlan) while exporting, else null
@@ -1880,7 +1925,8 @@
           centeredTrack: indexOfTrack(centeredTrackId),
           alignment: alignPoint
             ? { point: { lat: alignPoint.lat, lng: alignPoint.lng }, active: alignmentActive }
-            : null
+            : null,
+          finish: finishPoint ? { lat: finishPoint.lat, lng: finishPoint.lng } : null
         };
         project.tracks = tracks.map(track => {
           const pts = track.points;
@@ -1984,6 +2030,9 @@
           setAlignmentActive(false);
         }
         setIsPickingPoint(false);
+        const finish = video.finish;
+        setFinishPoint(finish && Number.isFinite(finish.lat) && Number.isFinite(finish.lng) ? { lat: finish.lat, lng: finish.lng } : null);
+        setIsPickingFinish(false);
         fitMapToTracks(newTracks);
         return true;
       };
@@ -2866,48 +2915,221 @@
         return { x: x0, y: y0, width: panelWidth, height: panelHeight };
       };
 
-      // Redraw the preview legend/scoreboard overlay after every render. It lives
-      // on the reference-size surface (drawn at scale 1, CSS-scaled with the map).
-      // The panel is drawn on an off-screen surface-size canvas and only its
-      // bounds are copied into the visible canvas, which is sized and positioned
-      // to the panel - a full-surface visible canvas changing every frame was
-      // expensive to composite on phones.
-      const scoreboardCanvasRef = useRef(null);
-      const scoreboardScratchRef = useRef(null);
-      useEffect(() => {
-        const canvas = scoreboardCanvasRef.current;
-        if (!canvas) return;
-        const hide = () => { canvas.style.display = 'none'; };
-        if (!showLegend || isRendering || effectiveTracks.length === 0 || !surfaceSize) return hide();
+      // ---- Leaderboard (see DEFAULT_FINISH_RADIUS) ----
 
-        let scratch = scoreboardScratchRef.current;
-        if (!scratch) scratch = scoreboardScratchRef.current = document.createElement('canvas');
+      // Per track: index of its finish arrival - the first point inside the
+      // finish radius after having been outside it (so a start at the finish
+      // doesn't count), searching from where the track is at the stats start
+      const finishArrivals = useMemo(() => {
+        const arrivals = new Map();
+        if (!finishPoint) return arrivals;
+        const target = { lat: finishPoint.lat, lon: finishPoint.lng };
+        effectiveTracks.forEach(track => {
+          const startHead = getHeadState(track, statsStartProgress);
+          let from = startHead ? startHead.index : 0;
+          if (alignmentActive) {
+            const match = alignmentMatches[track.id];
+            if (!match) return;
+            from = Math.max(from, match.index);
+          }
+          let wasOutside = false;
+          for (let i = from; i < track.points.length; i++) {
+            const inside = getDistance(track.points[i], target) * 1000 <= finishRadius;
+            if (!inside) {
+              wasOutside = true;
+            } else if (wasOutside) {
+              arrivals.set(track.id, i);
+              break;
+            }
+          }
+        });
+        return arrivals;
+      }, [effectiveTracks, finishPoint, finishRadius, statsStartProgress, alignmentActive, alignmentMatches, alignedTiming, animationStyle, simultaneousSpan]);
+
+      // The race clock (same as the scoreboard timer, before the stats-start
+      // offset) at a given timestamp of a track, or null without a clock
+      const getRaceClockAtTrackTime = (track, timeMs) => {
+        if (isNaN(timeMs)) return null;
+        if (alignmentActive) {
+          const match = alignmentMatches[track.id];
+          const alignTime = match ? track.timesMs[match.index] : NaN;
+          return alignedTiming.spanMs > 0 && !isNaN(alignTime) ? timeMs - alignTime : null;
+        }
+        if (animationStyle === 'simultaneous' && simultaneousSpan) return timeMs - simultaneousSpan.earliestStart;
+        return null;
+      };
+
+      // Leaderboard rows at a progress, in rank order: finished tracks first (by
+      // finish time), then by straight-line distance to go; not-yet-started last
+      const computeLeaderboard = (progressPercent) => {
+        if (!finishPoint) return [];
+        const target = { lat: finishPoint.lat, lon: finishPoint.lng };
+        const clockStart = getRaceClockMs(statsStartProgress);
+        const rows = effectiveTracks.map((track, order) => {
+          const head = getHeadState(track, progressPercent);
+          const arrival = finishArrivals.get(track.id);
+          if (head && arrival !== undefined && head.index >= arrival) {
+            const clock = getRaceClockAtTrackTime(track, track.timesMs[arrival]);
+            const elapsed = clock !== null && clockStart !== null ? clock - clockStart : null;
+            return { track, order, group: 0, key: elapsed !== null ? elapsed : arrival, text: elapsed !== null ? `\u2691 ${formatRaceTime(elapsed)}` : '\u2691', finished: true };
+          }
+          if (!head) return { track, order, group: 2, key: 0, text: '\u2014', finished: false };
+          const meters = getDistance(getHeadPoint(track, head), target) * 1000;
+          return { track, order, group: 1, key: meters, text: formatShortDistance(meters, statsUnits), finished: false };
+        });
+        return rows.sort((a, b) => a.group - b.group || a.key - b.key || a.order - b.order);
+      };
+
+      // Draw the leaderboard panel (preview overlay and captureFrame). `avoid` is
+      // the scoreboard's panel when it sits in the same corner - the leaderboard
+      // stacks next to it. Returns the panel bounds, or null if nothing to draw.
+      const drawLeaderboard = (ctx, frameWidth, frameHeight, scale, progressPercent, { avoid = null, bottomReserve = 0 } = {}) => {
+        const rows = computeLeaderboard(progressPercent);
+        if (rows.length === 0) return null;
+        const layout = getLegendLayout(leaderboardSize, scale);
+        const font = leaderboardFont;
+        const itemFont = `${layout.itemFont}px ${font}`;
+        const valueFont = `600 ${layout.itemFont}px ${font}`;
+        const captionFont = `600 ${layout.titleFont}px ${font}`;
+        const colGap = layout.barGap * 1.6;
+        const supportsLetterSpacing = 'letterSpacing' in ctx;
+
+        ctx.save();
+        const measure = (text, f, spaced = false) => {
+          ctx.font = f;
+          if (supportsLetterSpacing) ctx.letterSpacing = spaced ? `${layout.titleLetterSpacing}px` : '0px';
+          const w = ctx.measureText(text).width + (spaced && !supportsLetterSpacing ? text.length * layout.titleLetterSpacing : 0);
+          if (supportsLetterSpacing) ctx.letterSpacing = '0px';
+          return w;
+        };
+        const drawText = (text, x, y, f, color, align = 'left', spaced = false) => {
+          ctx.font = f;
+          ctx.fillStyle = color;
+          ctx.textAlign = align;
+          if (supportsLetterSpacing) ctx.letterSpacing = spaced ? `${layout.titleLetterSpacing}px` : '0px';
+          ctx.fillText(text, x, y);
+          if (supportsLetterSpacing) ctx.letterSpacing = '0px';
+        };
+
+        const rankWidth = measure(`${rows.length}.`, valueFont);
+        const nameWidth = Math.max(...rows.map(r => measure(r.track.label, itemFont)));
+        // Fixed-width value column (templates) so the panel doesn't resize every frame
+        const valueWidth = Math.max(
+          measure(`0.00 ${STAT_UNITS[statsUnits].distance}`, valueFont),
+          measure(`999 ${STAT_UNITS[statsUnits].short}`, valueFont),
+          ...rows.map(r => measure(r.text, valueFont))
+        );
+        const headerWidth = measure('LEADERBOARD', captionFont, true);
+        const rowWidth = rankWidth + layout.barGap + layout.barWidth + layout.barGap + nameWidth + colGap + valueWidth;
+        const panelWidth = 2 * layout.pad + Math.max(headerWidth, rowWidth);
+        const panelHeight = 2 * layout.pad + layout.titleHeight + layout.titleGap + rows.length * layout.rowHeight;
+
+        const isRight = leaderboardPosition === 'top-right' || leaderboardPosition === 'bottom-right';
+        const isTop = leaderboardPosition === 'top-left' || leaderboardPosition === 'top-right';
+        const x0 = isRight ? frameWidth - panelWidth - layout.margin : layout.margin;
+        let y0;
+        if (isTop) {
+          y0 = avoid ? avoid.y + avoid.height + layout.margin / 2 : layout.margin;
+        } else {
+          const bottomMargin = isRight ? Math.max(layout.margin, bottomReserve) : layout.margin;
+          y0 = avoid ? avoid.y - panelHeight - layout.margin / 2 : frameHeight - panelHeight - bottomMargin;
+        }
+
+        ctx.fillStyle = 'rgba(45, 45, 45, 0.95)';
+        ctx.beginPath();
+        if (typeof ctx.roundRect === 'function') {
+          ctx.roundRect(x0, y0, panelWidth, panelHeight, layout.radius);
+        } else {
+          ctx.rect(x0, y0, panelWidth, panelHeight);
+        }
+        ctx.fill();
+        ctx.textBaseline = 'middle';
+
+        const left = x0 + layout.pad;
+        const right = x0 + panelWidth - layout.pad;
+        let y = y0 + layout.pad;
+        drawText('LEADERBOARD', left, y + layout.titleHeight / 2, captionFont, '#999', 'left', true);
+        y += layout.titleHeight + layout.titleGap;
+
+        rows.forEach((row, i) => {
+          const mid = y + layout.rowHeight / 2;
+          drawText(`${i + 1}.`, left + rankWidth, mid, valueFont, '#999', 'right');
+          const barX = left + rankWidth + layout.barGap;
+          ctx.fillStyle = row.track.color;
+          ctx.fillRect(barX, mid - layout.barHeight / 2, layout.barWidth, layout.barHeight);
+          drawText(row.track.label, barX + layout.barWidth + layout.barGap, mid, itemFont, '#ffffff');
+          drawText(row.text, right, mid, valueFont, row.finished ? '#ffd54a' : '#ffffff', 'right');
+          y += layout.rowHeight;
+        });
+        ctx.restore();
+        return { x: x0, y: y0, width: panelWidth, height: panelHeight };
+      };
+
+      // Redraw the preview scoreboard and leaderboard overlays after every render.
+      // They live on the reference-size surface (drawn at scale 1, CSS-scaled with
+      // the map). Each panel is drawn on an off-screen surface-size canvas and only
+      // its bounds are copied into its visible canvas, sized and positioned to the
+      // panel - a full-surface visible canvas changing every frame was expensive
+      // to composite on phones.
+      const scoreboardCanvasRef = useRef(null);
+      const leaderboardCanvasRef = useRef(null);
+      const panelScratchRef = useRef(null);
+      useEffect(() => {
+        const panels = [scoreboardCanvasRef.current, leaderboardCanvasRef.current];
+        const hideAll = () => panels.forEach(canvas => { if (canvas) canvas.style.display = 'none'; });
+        if (isRendering || effectiveTracks.length === 0 || !surfaceSize) return hideAll();
+
+        let scratch = panelScratchRef.current;
+        if (!scratch) scratch = panelScratchRef.current = document.createElement('canvas');
         if (scratch.width !== surfaceSize.width || scratch.height !== surfaceSize.height) {
           scratch.width = surfaceSize.width;
           scratch.height = surfaceSize.height;
         }
         const scratchCtx = scratch.getContext('2d');
-        scratchCtx.clearRect(0, 0, scratch.width, scratch.height);
-        const bounds = drawScoreboard(scratchCtx, scratch.width, scratch.height, 1, progress, bottomRightReserve);
-        if (!bounds) return hide();
 
-        const x = Math.max(0, Math.floor(bounds.x));
-        const y = Math.max(0, Math.floor(bounds.y));
-        const w = Math.min(scratch.width - x, Math.ceil(bounds.x + bounds.width) - x);
-        const h = Math.min(scratch.height - y, Math.ceil(bounds.y + bounds.height) - y);
-        if (w <= 0 || h <= 0) return hide();
-        if (canvas.width !== w || canvas.height !== h) {
-          canvas.width = w;
-          canvas.height = h;
-        } else {
-          canvas.getContext('2d').clearRect(0, 0, w, h);
-        }
-        canvas.getContext('2d').drawImage(scratch, x, y, w, h, 0, 0, w, h);
-        canvas.style.left = `${x}px`;
-        canvas.style.top = `${y}px`;
-        canvas.style.width = `${w}px`;
-        canvas.style.height = `${h}px`;
-        canvas.style.display = 'block';
+        // Copy a panel's area of the scratch canvas into its visible canvas
+        const blit = (canvas, bounds) => {
+          if (!canvas) return;
+          if (!bounds) {
+            canvas.style.display = 'none';
+            return;
+          }
+          const x = Math.max(0, Math.floor(bounds.x));
+          const y = Math.max(0, Math.floor(bounds.y));
+          const w = Math.min(scratch.width - x, Math.ceil(bounds.x + bounds.width) - x);
+          const h = Math.min(scratch.height - y, Math.ceil(bounds.y + bounds.height) - y);
+          if (w <= 0 || h <= 0) {
+            canvas.style.display = 'none';
+            return;
+          }
+          if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+          } else {
+            canvas.getContext('2d').clearRect(0, 0, w, h);
+          }
+          canvas.getContext('2d').drawImage(scratch, x, y, w, h, 0, 0, w, h);
+          canvas.style.left = `${x}px`;
+          canvas.style.top = `${y}px`;
+          canvas.style.width = `${w}px`;
+          canvas.style.height = `${h}px`;
+          canvas.style.display = 'block';
+        };
+
+        scratchCtx.clearRect(0, 0, scratch.width, scratch.height);
+        const scoreboardBounds = showLegend
+          ? drawScoreboard(scratchCtx, scratch.width, scratch.height, 1, progress, bottomRightReserve)
+          : null;
+        blit(scoreboardCanvasRef.current, scoreboardBounds);
+
+        scratchCtx.clearRect(0, 0, scratch.width, scratch.height);
+        const leaderboardBounds = showLeaderboard && finishPoint
+          ? drawLeaderboard(scratchCtx, scratch.width, scratch.height, 1, progress, {
+              avoid: leaderboardPosition === legendPosition ? scoreboardBounds : null,
+              bottomReserve: bottomRightReserve
+            })
+          : null;
+        blit(leaderboardCanvasRef.current, leaderboardBounds);
       });
 
       const animate = (timestamp) => {
@@ -3044,6 +3266,63 @@
         };
       }, [isPickingPoint]);
 
+      // Finish-point picking (Leaderboard): while active, clicking the map sets it
+      useEffect(() => {
+        if (!isPickingFinish || !mapInstanceRef.current) return;
+        const map = mapInstanceRef.current;
+        map.getContainer().classList.add('picking-point');
+        const onMapClick = (e) => {
+          setFinishPoint({ lat: e.latlng.lat, lng: e.latlng.lng });
+          setIsPickingFinish(false);
+        };
+        map.on('click', onMapClick);
+        return () => {
+          map.off('click', onMapClick);
+          map.getContainer().classList.remove('picking-point');
+        };
+      }, [isPickingFinish]);
+
+      // Finish flag (preview marker; exports draw it in captureFrame) and the
+      // finish-radius circle (preview only, removed while rendering video)
+      const finishLayersRef = useRef([]);
+      useEffect(() => {
+        const map = mapInstanceRef.current;
+        if (!map) return;
+        finishLayersRef.current.forEach(layer => map.removeLayer(layer));
+        finishLayersRef.current = [];
+        if (!finishPoint || isRendering) return;
+
+        if (showLeaderboard || isPickingFinish) {
+          finishLayersRef.current.push(L.circle([finishPoint.lat, finishPoint.lng], {
+            radius: finishRadius,
+            color: '#ffffff',
+            weight: 1.5 * renderScale,
+            opacity: 0.8,
+            dashArray: `${4 * renderScale} ${4 * renderScale}`,
+            fill: false,
+            interactive: false
+          }).addTo(map));
+        }
+        if (showFinishFlag) {
+          // Render the same flag the export draws into a small image
+          const size = FINISH_FLAG_SIZE * renderScale;
+          const pad = Math.ceil(size * 0.1);
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.ceil(size * 0.9) + 2 * pad;
+          canvas.height = Math.ceil(size) + 2 * pad;
+          drawFinishFlag(canvas.getContext('2d'), pad + size * 0.04, pad + size, size);
+          finishLayersRef.current.push(L.marker([finishPoint.lat, finishPoint.lng], {
+            icon: L.icon({
+              iconUrl: canvas.toDataURL(),
+              iconSize: [canvas.width, canvas.height],
+              iconAnchor: [pad + size * 0.04, pad + size]
+            }),
+            interactive: false,
+            keyboard: false
+          }).addTo(map));
+        }
+      }, [finishPoint, finishRadius, showFinishFlag, showLeaderboard, isPickingFinish, isRendering, renderScale]);
+
       // Draw the common-point circle and per-track match markers.
       // Removed while rendering video: with preferCanvas these layers would
       // otherwise be baked into the exported frames.
@@ -3121,7 +3400,7 @@
 
         // While picking/configuring the common point, always show full previews
         // so the user can see the overlaid tracks to click on
-        const forcePreview = isPickingPoint || (alignPoint && !alignmentActive);
+        const forcePreview = isPickingPoint || isPickingFinish || (alignPoint && !alignmentActive);
         if (!showAllTracks && !forcePreview) return;
 
         effectiveTracks.forEach(track => {
@@ -3132,7 +3411,7 @@
           preview.bringToBack(); // keep previews under the animated lines and markers
           previewLayersRef.current.push(preview);
         });
-      }, [effectiveTracks, showAllTracks, isPickingPoint, alignPoint, alignmentActive, renderScale]);
+      }, [effectiveTracks, showAllTracks, isPickingPoint, isPickingFinish, alignPoint, alignmentActive, renderScale]);
 
       // Animated line, position marker, and label per track: moved every frame,
       // recreated only when their style (color, scale, label text/font) changes
@@ -3614,6 +3893,16 @@
           }
         }
 
+        // 2c. Finish flag (Leaderboard)
+        if (finishPoint && showFinishFlag && mapInstance) {
+          try {
+            const pos = latLonToPixel(finishPoint.lat, finishPoint.lng, mapInstance.getBounds(), sourceWidth, sourceHeight);
+            drawFinishFlag(ctx, pos.x, pos.y, FINISH_FLAG_SIZE * frameScale);
+          } catch (e) {
+            console.warn('Could not draw finish flag:', e);
+          }
+        }
+
         // 3. Draw track labels
         const labels = Array.from(mapContainer.querySelectorAll('.map-label'));
         labels.forEach(label => {
@@ -3643,11 +3932,24 @@
         const bottomRightReserve = hasWatermark ? watermarkLayout.reserve : 0;
 
         // 4. Draw legend / scoreboard if visible (same drawing as the preview overlay)
+        let scoreboardBounds = null;
         if (shouldShowLegend && currentTracks && currentTracks.length > 0) {
           try {
-            drawScoreboard(ctx, sourceWidth, sourceHeight, frameScale, currentProgress, bottomRightReserve);
+            scoreboardBounds = drawScoreboard(ctx, sourceWidth, sourceHeight, frameScale, currentProgress, bottomRightReserve);
           } catch (e) {
             console.warn('Could not draw legend:', e);
+          }
+        }
+
+        // 4b. Leaderboard (separate panel; stacks next to the scoreboard if they share a corner)
+        if (showLeaderboard && finishPoint && currentTracks && currentTracks.length > 0) {
+          try {
+            drawLeaderboard(ctx, sourceWidth, sourceHeight, frameScale, currentProgress, {
+              avoid: leaderboardPosition === legendPos ? scoreboardBounds : null,
+              bottomReserve: bottomRightReserve
+            });
+          } catch (e) {
+            console.warn('Could not draw leaderboard:', e);
           }
         }
 
@@ -4689,7 +4991,10 @@
                               )}
                               <button
                                 className={`btn ${isPickingPoint ? 'btn-primary' : 'btn-secondary'}`}
-                                onClick={() => setIsPickingPoint(!isPickingPoint)}
+                                onClick={() => {
+                                  setIsPickingFinish(false); // only one map-picking mode at a time
+                                  setIsPickingPoint(!isPickingPoint);
+                                }}
                                 disabled={isRecording || isRendering}
                                 style={{ marginBottom: '8px' }}
                               >
@@ -5136,6 +5441,121 @@
                     </div>
 
                     <div className="controls">
+                      <CollapsibleSection title="Leaderboard">
+                      <div className="control-group">
+                        <label className="checkbox-group">
+                          <input
+                            type="checkbox"
+                            className="checkbox"
+                            checked={showLeaderboard}
+                            onChange={(e) => setShowLeaderboard(e.target.checked)}
+                            disabled={isRecording}
+                          />
+                          <span>Show leaderboard</span>
+                        </label>
+                        <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
+                          Ranks the tracks by distance to a finish point you place. A track that reaches the finish
+                          is locked in by its finish time.
+                        </p>
+                      </div>
+
+                      <div className="control-group">
+                        <div className="button-group">
+                          <button
+                            className={`btn ${isPickingFinish ? 'btn-primary' : 'btn-secondary'}`}
+                            onClick={() => {
+                              setIsPickingPoint(false); // only one map-picking mode at a time
+                              setIsPickingFinish(!isPickingFinish);
+                            }}
+                            disabled={isRecording}
+                          >
+                            {isPickingFinish ? '\u2715 Cancel' : (finishPoint ? '\u{1F3C1} Move finish' : '\u{1F3C1} Place finish')}
+                          </button>
+                          {finishPoint && !isPickingFinish && (
+                            <button
+                              className="btn btn-secondary"
+                              onClick={() => setFinishPoint(null)}
+                              disabled={isRecording}
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
+                          {isPickingFinish
+                            ? 'Click the map where the finish is.'
+                            : (finishPoint ? 'Finish placed.' : 'Place a finish point to show the leaderboard.')}
+                        </p>
+                      </div>
+
+                      <div className="control-group">
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>
+                          Finish radius: {statsUnits === 'imperial' ? `${Math.round(finishRadius * STAT_UNITS.imperial.mToShort)} ft` : `${finishRadius} m`}
+                        </label>
+                        <input
+                          type="range"
+                          className="slider"
+                          min="10"
+                          max="200"
+                          step="5"
+                          value={finishRadius}
+                          onChange={(e) => setFinishRadius(parseInt(e.target.value, 10))}
+                          disabled={isRecording}
+                        />
+                        <label className="checkbox-group" style={{ marginTop: '8px' }}>
+                          <input
+                            type="checkbox"
+                            className="checkbox"
+                            checked={showFinishFlag}
+                            onChange={(e) => setShowFinishFlag(e.target.checked)}
+                            disabled={isRecording}
+                          />
+                          <span>Show finish flag</span>
+                        </label>
+                      </div>
+
+                      <div className="control-group">
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Position</label>
+                        <select
+                          className="select"
+                          value={leaderboardPosition}
+                          onChange={(e) => setLeaderboardPosition(e.target.value)}
+                          disabled={isRecording}
+                          style={{ width: '100%', marginBottom: '8px' }}
+                        >
+                          <option value="top-left">Top Left</option>
+                          <option value="top-right">Top Right</option>
+                          <option value="bottom-left">Bottom Left</option>
+                          <option value="bottom-right">Bottom Right</option>
+                        </select>
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Font</label>
+                        <select
+                          className="select"
+                          value={leaderboardFont}
+                          onChange={(e) => setLeaderboardFont(e.target.value)}
+                          disabled={isRecording}
+                          style={{ width: '100%', marginBottom: '8px' }}
+                        >
+                          {SCOREBOARD_FONTS.map(f => (
+                            <option key={f.label} value={f.value}>{f.label}</option>
+                          ))}
+                        </select>
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Size: {leaderboardSize}px</label>
+                        <input
+                          type="range"
+                          className="slider"
+                          min="10"
+                          max="40"
+                          step="1"
+                          value={leaderboardSize}
+                          onChange={(e) => setLeaderboardSize(parseInt(e.target.value, 10))}
+                          disabled={isRecording}
+                        />
+                      </div>
+                      </CollapsibleSection>
+                    </div>
+
+                    <div className="controls">
                       <CollapsibleSection title="Track Labels" defaultOpen={false}>
                       <div className="control-group">
                         <label className="checkbox-group">
@@ -5419,6 +5839,7 @@
               >
               {/* Legend / scoreboard: drawn by drawScoreboard, like the export */}
               <canvas ref={scoreboardCanvasRef} className="map-scoreboard" />
+              <canvas ref={leaderboardCanvasRef} className="map-scoreboard" />
               {videoTitle && videoTitle.trim() !== '' && (
                 <div
                   className="map-title"
