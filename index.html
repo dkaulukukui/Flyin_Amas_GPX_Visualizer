@@ -1232,6 +1232,10 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.16.0 - Leaderboard: the example tracks come with a default finish point (and the leaderboard defaults to the
+    //          bottom-right), dropped on the first upload unless moved - like the default title. Trend arrows flipped:
+    //          green up = catching up, red down = falling behind. Position changes animate: rows slide past each other
+    //          over 0.8 s of video time with a fading green (moved up) / red (moved down) highlight; toggleable.
     // 3.15.0 - Leaderboard gap trend arrows: next to each racing track's gap, red up chevrons when it is falling behind the
     //          leader and green down chevrons when catching up; 1-3 chevrons by rate (0.1 / 0.3 / 0.6 m/s over the last
     //          30 s of race time). Toggle in the Leaderboard section (on by default).
@@ -1394,7 +1398,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.15.0";
+    const APP_VERSION = "3.16.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -1655,29 +1659,36 @@
     // user places; a track that arrives within the finish radius is locked in
     // by finish time
     const DEFAULT_FINISH_RADIUS = 30; // meters
+    // Finish point used with the bundled example tracks (like the default title,
+    // it is dropped on the user's first upload unless they moved it)
+    const EXAMPLE_FINISH_POINT = { lat: 21.26110478009059, lng: -157.8240156326441 };
+    const isExampleFinish = (point) => !!point && point.lat === EXAMPLE_FINISH_POINT.lat && point.lng === EXAMPLE_FINISH_POINT.lng;
+    // Position changes: rows slide to their new place over this much video time
+    // (video time, not wall-clock, so the preview and the export match)
+    const RANK_SLIDE_SECONDS = 0.8;
     const FINISH_FLAG_SIZE = 30; // reference px (pole height)
 
     // Gap trend arrows (v3.15.0): how fast a track's gap to the leader changes,
     // measured over the last GAP_TREND_WINDOW_MS of race time. At or above each
-    // threshold (m/s) one more chevron is drawn: red pointing up = falling
-    // behind, green pointing down = catching up. Picked from the example race,
+    // threshold (m/s) one more chevron is drawn: green pointing up = catching up,
+    // red pointing down = falling behind. Picked from the example race,
     // where the gap changes at a median ~0.25 m/s (0.1/0.3/0.6 m/s gives no arrow
     // ~20% of the time and three chevrons ~13%).
     const GAP_TREND_WINDOW_MS = 30000;
     const GAP_TREND_THRESHOLDS = [0.1, 0.3, 0.6]; // m/s (~20 / 60 / 120 ft per minute)
 
     // 1-3 stacked chevrons centered at (cx, cy) in a box `size` px tall;
-    // trend > 0 = red up (falling behind), trend < 0 = green down (catching up)
+    // trend > 0 = red down (falling behind), trend < 0 = green up (catching up)
     function drawTrendArrow(ctx, cx, cy, size, trend) {
       const count = Math.min(3, Math.abs(trend));
       if (!count) return;
-      const up = trend > 0;
+      const up = trend < 0;
       const halfW = size * 0.34;
       const chevronH = size * 0.26;
       const spacing = size * 0.24;
       const totalH = chevronH + (count - 1) * spacing;
       ctx.save();
-      ctx.strokeStyle = up ? '#ff4d4d' : '#3ddc84';
+      ctx.strokeStyle = up ? '#3ddc84' : '#ff4d4d';
       ctx.lineWidth = Math.max(1.5, size * 0.14);
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
@@ -1856,12 +1867,13 @@
       const [statsGapIds, setStatsGapIds] = useState([null, null]); // tracks for the gap stat (null = default)
       const [scoreboardFont, setScoreboardFont] = usePersistentState(settingsRegistry, 'scoreboardFont', LEGEND_FONT);
       const [showLeaderboard, setShowLeaderboard] = usePersistentState(settingsRegistry, 'showLeaderboard', true);
-      const [leaderboardPosition, setLeaderboardPosition] = usePersistentState(settingsRegistry, 'leaderboardPosition', 'top-right');
+      const [leaderboardPosition, setLeaderboardPosition] = usePersistentState(settingsRegistry, 'leaderboardPosition', 'bottom-right');
       const [leaderboardSize, setLeaderboardSize] = usePersistentState(settingsRegistry, 'leaderboardSize', 15); // reference px
       const [leaderboardFont, setLeaderboardFont] = usePersistentState(settingsRegistry, 'leaderboardFont', LEGEND_FONT);
       const [finishRadius, setFinishRadius] = usePersistentState(settingsRegistry, 'finishRadius', DEFAULT_FINISH_RADIUS); // meters
       const [showFinishFlag, setShowFinishFlag] = usePersistentState(settingsRegistry, 'showFinishFlag', true);
       const [showGapTrend, setShowGapTrend] = usePersistentState(settingsRegistry, 'showGapTrend', true);
+      const [animateRankChanges, setAnimateRankChanges] = usePersistentState(settingsRegistry, 'animateRankChanges', true);
       const [finishPoint, setFinishPoint] = useState(null); // {lat, lng} - per race (saved in projects)
       const [isPickingFinish, setIsPickingFinish] = useState(false);
       const [matchVideoFrame, setMatchVideoFrame] = usePersistentState(settingsRegistry, 'matchVideoFrame', true); // letterbox preview to export aspect ratio
@@ -2351,6 +2363,8 @@
             const date = new Date(newTracks[0].startTime);
             setVideoTitle(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
           }
+          // The example race's finish point goes with the examples (kept if the user moved it)
+          if (base.length === 0) setFinishPoint(point => (isExampleFinish(point) ? null : point));
           return [...base, ...newTracks];
         });
         fitMapToTracks(newTracks);
@@ -3011,8 +3025,9 @@
       // finish time), then by straight-line distance to go; not-yet-started last.
       // Racing tracks show their gap to the leader (e.g. "-0.50 mi"); the leader
       // shows a dash (or its finish time if it has finished).
-      const computeLeaderboard = (progressPercent) => {
-        if (!finishPoint) return [];
+      // Rank order at a progress (rows with group/key, sorted); shared by the
+      // leaderboard and its position-change slide
+      const rankLeaderboardRows = (progressPercent) => {
         const target = { lat: finishPoint.lat, lon: finishPoint.lng };
         const clockStart = getRaceClockMs(statsStartProgress);
         const rows = effectiveTracks.map((track, order) => {
@@ -3027,7 +3042,41 @@
           const meters = getDistance(getHeadPoint(track, head), target) * 1000;
           return { track, order, group: 1, key: meters, text: '', finished: false };
         });
-        rows.sort((a, b) => a.group - b.group || a.key - b.key || a.order - b.order);
+        return rows.sort((a, b) => a.group - b.group || a.key - b.key || a.order - b.order);
+      };
+
+      const computeLeaderboard = (progressPercent) => {
+        if (!finishPoint || effectiveTracks.length === 0) return [];
+        const target = { lat: finishPoint.lat, lon: finishPoint.lng };
+        const rows = rankLeaderboardRows(progressPercent);
+        rows.forEach((row, i) => { row.slot = i; row.moved = 0; });
+
+        // Position changes: when the order differs from RANK_SLIDE_SECONDS ago,
+        // find when it changed (binary search) and slide each moved row from its
+        // old place to its new one; `moved` fades from 1 to 0 over the slide
+        // (sign: + moved up, - moved down) for the highlight
+        if (animateRankChanges && progressPercent > 0) {
+          const windowPct = (RANK_SLIDE_SECONDS / exportDuration) * 100;
+          const orderKey = (p) => rankLeaderboardRows(p).map(r => r.track.id).join('|');
+          let lo = Math.max(0, progressPercent - windowPct);
+          let hi = progressPercent;
+          const oldKey = orderKey(lo);
+          if (oldKey !== rows.map(r => r.track.id).join('|')) {
+            for (let k = 0; k < 12; k++) {
+              const mid = (lo + hi) / 2;
+              if (orderKey(mid) === oldKey) lo = mid; else hi = mid;
+            }
+            const frac = Math.min(1, (progressPercent - hi) / windowPct);
+            const eased = frac * frac * (3 - 2 * frac); // smoothstep
+            const oldIndex = new Map(oldKey.split('|').map((id, i) => [id, i]));
+            rows.forEach((row, i) => {
+              const from = oldIndex.get(String(row.track.id));
+              if (from === undefined || from === i) return;
+              row.slot = from + (i - from) * eased;
+              row.moved = Math.sign(from - i) * (1 - frac);
+            });
+          }
+        }
 
         // Gap to the leader, measured in distance to go (a finished leader has 0 to go)
         const leader = rows[0];
@@ -3146,16 +3195,43 @@
         drawText('LEADERBOARD', left, y + layout.titleHeight / 2, captionFont, '#999', 'left', true);
         y += layout.titleHeight + layout.titleGap;
 
+        // Rank numbers stay in place; the rows themselves slide on position changes
         rows.forEach((row, i) => {
-          const mid = y + layout.rowHeight / 2;
-          drawText(`${i + 1}.`, left + rankWidth, mid, valueFont, '#999', 'right');
-          const barX = left + rankWidth + layout.barGap;
+          drawText(`${i + 1}.`, left + rankWidth, y + (i + 0.5) * layout.rowHeight, valueFont, '#999', 'right');
+        });
+        const barX = left + rankWidth + layout.barGap;
+        // Draw order: still rows, then rows moving down, then rows moving up - the
+        // overtaking track passes over the one it overtakes
+        const drawOrder = (row) => (row.moved === 0 ? -2 : row.moved);
+        [...rows].sort((a, b) => drawOrder(a) - drawOrder(b)).forEach(row => {
+          const mid = y + (row.slot + 0.5) * layout.rowHeight;
+          if (row.moved) {
+            // Solid row background (so overlapping rows don't show through each
+            // other mid-swap) plus a fading highlight: green moving up, red down
+            const hx = barX - layout.barGap * 0.5;
+            const hw = right - hx + layout.barGap * 0.5;
+            const rowRect = () => {
+              ctx.beginPath();
+              if (typeof ctx.roundRect === 'function') {
+                ctx.roundRect(hx, mid - layout.rowHeight / 2, hw, layout.rowHeight, layout.radius / 2);
+              } else {
+                ctx.rect(hx, mid - layout.rowHeight / 2, hw, layout.rowHeight);
+              }
+            };
+            ctx.fillStyle = '#2d2d2d';
+            rowRect();
+            ctx.fill();
+            ctx.globalAlpha = 0.55 * Math.abs(row.moved);
+            ctx.fillStyle = row.moved > 0 ? '#3ddc84' : '#ff4d4d';
+            rowRect();
+            ctx.fill();
+            ctx.globalAlpha = 1;
+          }
           ctx.fillStyle = row.track.color;
           ctx.fillRect(barX, mid - layout.barHeight / 2, layout.barWidth, layout.barHeight);
           drawText(row.track.label, barX + layout.barWidth + layout.barGap, mid, itemFont, '#ffffff');
           drawText(row.text, right - arrowColWidth, mid, valueFont, row.finished ? '#ffd54a' : '#ffffff', 'right');
           if (row.trend) drawTrendArrow(ctx, right - arrowSize * 0.375, mid, arrowSize, row.trend);
-          y += layout.rowHeight;
         });
         ctx.restore();
         return { x: x0, y: y0, width: panelWidth, height: panelHeight };
@@ -3328,7 +3404,11 @@
           }
 
           if (cancelled || loaded.length === 0) return;
-          setTracks(prev => (prev.length > 0 ? prev : loaded)); // never clobber user uploads
+          setTracks(prev => {
+            if (prev.length > 0) return prev; // never clobber user uploads
+            setFinishPoint(point => point || EXAMPLE_FINISH_POINT); // example race's finish (leaderboard)
+            return loaded;
+          });
           fitMapToTracks(loaded);
         })();
 
@@ -5595,10 +5675,20 @@
                           <span>Show gap trend arrows</span>
                         </label>
                         <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
-                          <span style={{ color: '#ff4d4d' }}>{'\u25B2'}</span> falling behind,{' '}
-                          <span style={{ color: '#3ddc84' }}>{'\u25BC'}</span> catching up. More arrows = faster
+                          <span style={{ color: '#3ddc84' }}>{'\u25B2'}</span> catching up,{' '}
+                          <span style={{ color: '#ff4d4d' }}>{'\u25BC'}</span> falling behind. More arrows = faster
                           (over the last 30 s of race time).
                         </p>
+                        <label className="checkbox-group" style={{ marginTop: '4px' }}>
+                          <input
+                            type="checkbox"
+                            className="checkbox"
+                            checked={animateRankChanges}
+                            onChange={(e) => setAnimateRankChanges(e.target.checked)}
+                            disabled={isRecording}
+                          />
+                          <span>Animate position changes</span>
+                        </label>
                       </div>
 
                       <div className="control-group">

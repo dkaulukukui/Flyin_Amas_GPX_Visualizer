@@ -1,5 +1,12 @@
 To Do List:
 
+## Done in v3.16.0
+
+- Leaderboard on by default for the example tracks (finish point + bottom-right position from the user's
+  project); dropped on the first upload unless the finish was moved. Trend arrows flipped: green up =
+  catching up, red down = falling behind. Position changes animate (rows slide past each other with a
+  green/red highlight; toggleable).
+
 ## Done in v3.15.0
 
 - Leaderboard gap trend arrows: red up chevrons when falling behind the leader, green down when catching up,
