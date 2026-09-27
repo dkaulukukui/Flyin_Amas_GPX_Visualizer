@@ -1,5 +1,12 @@
 To Do List:
 
+## Done in v3.5.0
+
+- ~~consider a different settings layout for better usability~~ — Done. Sidebar split into Tracks / Camera /
+  Overlays / Export tabs with the Export Video button pinned at the bottom; playback controls (play, reset,
+  scrubber, time, duration) moved to a transport bar under the map preview; settings are remembered in the
+  browser with a "Reset all settings to defaults" link.
+
 ## Done in v3.4.0
 
 - ~~show statistics on screen (Timer, Speed, total distance, distance between two tracks) with font/size/
@@ -58,4 +65,3 @@ To Do List:
 ## Remaining
 
 (nothing queued — add new ideas here)
-- Lets consider different user settings layout for bettter usability.

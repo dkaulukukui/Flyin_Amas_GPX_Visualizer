@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 3.4.0 (as of last update)
+   - Current version: 3.5.0 (as of last update)
 
 ### Key Technical Patterns
 
@@ -201,6 +201,25 @@ If neither path is available (very old iOS), an alert with screen-recording inst
 - **iOS 16.4+ / modern Android**: WebCodecs MP4 export (the old hard iOS block was removed)
 - **Older browsers**: MediaRecorder WebM fallback
 - **Very old iOS**: alert with screen-recording instructions
+
+#### UI Layout (v3.5.0)
+- **Sidebar** (`.sidebar`, flex column): `.sidebar-tabs` (from `SIDEBAR_TABS`; `activeTab` state) →
+  `.sidebar-content` (scrolls; one tab rendered at a time) → `.sidebar-footer` (Export Video button,
+  always visible). Tabs: **Tracks** (upload, track list + trim, animation style, smoothing, full-track
+  preview, Compare Tracks, totals), **Camera** (zoom-follow, centered track, zoom level), **Overlays**
+  (collapsible Video Title, Scoreboard & Stats, Track Labels, Watermark), **Export** (aspect ratio,
+  resolution, preview framing, quality, FPS). Non-Tracks tabs show a hint until tracks are loaded
+- **Transport bar** (`.transport-bar`, under `.map-stage` inside `.map-container`, a flex column):
+  play/pause, reset, scrubber (`handleProgressBarPointerDown`, pointer events → mouse + touch; shows the
+  stats-start marker), time readout, Duration input
+- **Remembered settings**: `usePersistentState(settingsRegistry, key, default)` (module-level hook) is used
+  instead of `useState` for preferences; values are saved to `localStorage`
+  (`SETTINGS_STORAGE_KEY`) after any change and loaded at startup (`savedSettings`; wrong-typed values
+  ignored, objects merged over defaults). `resetAllSettings()` restores every registered default. Not
+  persisted on purpose: tracks, `videoTitle`, `statsStartProgress`, `statsGapIds`, `centeredTrackId`,
+  `alignPoint`. **When adding a new preference, use `usePersistentState`**
+- The aspect-ratio effect only resets `exportResolution` when it doesn't match the ratio (so a
+  remembered resolution survives startup)
 
 #### State Management
 
@@ -394,7 +413,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 3.4.0**
+**Current Version: 3.5.0**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -421,6 +440,7 @@ No build process required - single HTML file is the entire app.
 - **v3.2.0**: WYSIWYG preview (reference-frame scaling, letterboxed preview, exports match preview at any resolution); Legend Size
 - **v3.3.0**: "FlyinAmas" default title; lower-right watermark (text/size/opacity); larger default text sizes
 - **v3.4.0**: Scoreboard & stats (timer, speed, distance, HR, stroke rate, gap) with a stats registry
+- **v3.5.0**: Tabbed sidebar (Tracks/Camera/Overlays/Export), transport bar under the preview, remembered settings
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which

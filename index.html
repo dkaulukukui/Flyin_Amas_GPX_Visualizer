@@ -75,26 +75,94 @@
       overflow: hidden;
     }
     
+    /* Sidebar: tab bar, scrolling tab content, pinned Export button */
     .sidebar {
       width: 320px;
       background: #2d2d2d;
-      padding: 20px;
-      overflow-y: auto;
       border-right: 1px solid #444;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
     }
-    
+
+    .sidebar-tabs {
+      display: flex;
+      border-bottom: 1px solid #444;
+      flex: none;
+    }
+
+    .sidebar-tab {
+      flex: 1;
+      padding: 12px 4px;
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      color: #999;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s;
+    }
+
+    .sidebar-tab:hover {
+      color: #ddd;
+    }
+
+    .sidebar-tab.active {
+      color: #fc4c02;
+      border-bottom-color: #fc4c02;
+    }
+
+    .sidebar-content {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    .sidebar-empty {
+      color: #999;
+      font-size: 13px;
+      text-align: center;
+      margin-top: 20px;
+    }
+
+    .reset-settings-link {
+      display: block;
+      margin: 8px auto 0;
+      background: none;
+      border: none;
+      color: #777;
+      font-size: 11px;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+
+    .reset-settings-link:hover:not(:disabled) {
+      color: #ccc;
+    }
+
+    .sidebar-footer {
+      flex: none;
+      display: flex;
+      padding: 12px 20px;
+      border-top: 1px solid #444;
+      background: #2d2d2d;
+    }
+
     .map-container {
       flex: 1;
       position: relative;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
     }
 
     /* Map area: the preview frame is centered in it, letterboxed to the export aspect ratio */
     .map-stage {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
+      position: relative;
+      flex: 1;
+      min-height: 0;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -361,6 +429,65 @@
       margin-top: 10px;
       cursor: pointer;
       transition: background 0.2s ease;
+    }
+
+    /* Playback controls under the preview */
+    .transport-bar {
+      flex: none;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 10px 16px;
+      background: #2d2d2d;
+      border-top: 1px solid #444;
+    }
+
+    .transport-btn {
+      flex: none;
+      width: 44px;
+      padding: 8px 0;
+      font-size: 16px;
+    }
+
+    .transport-btn:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .progress-bar.transport-scrubber {
+      flex: 1;
+      min-width: 120px;
+      margin-top: 0;
+      height: 10px;
+      touch-action: none; /* let touch drags scrub instead of scrolling */
+    }
+
+    .transport-time {
+      flex: none;
+      color: #ccc;
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .transport-duration {
+      flex: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #999;
+      font-size: 12px;
+    }
+
+    .transport-duration input {
+      width: 64px;
+      padding: 6px;
+      background: #1a1a1a;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: #fff;
+      font-size: 13px;
     }
 
     /* Where the scoreboard timer/distance start (set in Scoreboard & Stats) */
@@ -699,9 +826,15 @@
         display: flex;
       }
 
-      /* Hide header on mobile to save space */
+      /* While the sidebar is open, the close button sits just outside its
+         right edge so it doesn't cover the sidebar tabs */
+      .hamburger-btn.open {
+        left: calc(min(280px, 85vw) + 10px);
+      }
+
+      /* Hide header on mobile to save space; leave room for the menu button */
       .header {
-        padding: 15px 20px;
+        padding: 15px 20px 15px 84px;
       }
 
       .header h1 {
@@ -1084,6 +1217,13 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.5.0 - Settings layout overhaul: the 4,100px scrolling sidebar is now four tabs - Tracks (upload, track list,
+    //         animation style, compare, smoothing, totals), Camera (zoom/follow), Overlays (title, scoreboard & stats,
+    //         track labels, watermark), Export (format settings) - with the Export Video button pinned at the bottom.
+    //         Play/pause, reset, scrubber, time readout, and Duration moved to a transport bar under the map preview;
+    //         scrubbing uses pointer events (works with touch). Preferences are remembered in this browser
+    //         (localStorage via usePersistentState) with a "Reset all settings to defaults" link. Mobile: close
+    //         button no longer covers the tabs; header title clears the menu button.
     // 3.4.0 - Scoreboard & stats: the legend becomes a scoreboard with a race timer (header), per-track Speed,
     //         Distance, Heart Rate and Stroke Rate columns, and a Gap row between two chosen tracks. Stats come from
     //         a registry (STAT_DEFINITIONS: race/track/pair scopes) so future stats are one entry; HR and cadence
@@ -1174,7 +1314,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.4.0";
+    const APP_VERSION = "3.5.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -1400,6 +1540,40 @@
       { value: 'Verdana', label: 'Verdana' }
     ];
 
+    // Sidebar tabs (v3.5.0)
+    const SIDEBAR_TABS = [
+      { id: 'tracks', label: 'Tracks' },
+      { id: 'camera', label: 'Camera' },
+      { id: 'overlays', label: 'Overlays' },
+      { id: 'export', label: 'Export' }
+    ];
+
+    // Settings remembered in this browser (v3.5.0): preferences only - never
+    // tracks, the video title, or per-race values like the stats start.
+    const SETTINGS_STORAGE_KEY = 'flyinamas-gpx-settings-v1';
+    const savedSettings = (() => {
+      try {
+        return JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY)) || {};
+      } catch (e) {
+        return {}; // storage unavailable (private mode, file://) - just use defaults
+      }
+    })();
+
+    // useState that starts from the remembered value. `registry` (a ref) collects
+    // each setting's current value, setter, and default so they can be saved
+    // and reset together. A saved value of the wrong type is ignored; saved
+    // objects are merged over the default (new keys get their defaults).
+    function usePersistentState(registry, key, defaultValue) {
+      const [value, setValue] = useState(() => {
+        const saved = savedSettings[key];
+        if (saved === undefined || saved === null || typeof saved !== typeof defaultValue) return defaultValue;
+        if (typeof defaultValue === 'object') return { ...defaultValue, ...saved };
+        return saved;
+      });
+      registry.current[key] = { value, setValue, defaultValue };
+      return [value, setValue];
+    }
+
     // Collapsible sidebar section with a clickable chevron header
     function CollapsibleSection({ title, defaultOpen = true, children }) {
       const [open, setOpen] = useState(defaultOpen);
@@ -1415,45 +1589,47 @@
     }
 
     function GPXTrackAnimator() {
+      const settingsRegistry = useRef({}); // remembered settings (see usePersistentState)
+      const [activeTab, setActiveTab] = usePersistentState(settingsRegistry, 'activeTab', 'tracks');
       const [tracks, setTracks] = useState([]);
       const [isPlaying, setIsPlaying] = useState(false);
       const [progress, setProgress] = useState(0);
       const [isRecording, setIsRecording] = useState(false);
-      const [showAllTracks, setShowAllTracks] = useState(true);
-      const [trackSmoothing, setTrackSmoothing] = useState('light'); // key of SMOOTHING_RADIUS
-      const [showLabels, setShowLabels] = useState(true);
-      const [labelFont, setLabelFont] = useState('Arial');
-      const [labelSize, setLabelSize] = useState(16); // px
-      const [showLegend, setShowLegend] = useState(true);
-      const [animationStyle, setAnimationStyle] = useState('simultaneous');
-      const [zoomToTrack, setZoomToTrack] = useState(true);
-      const [zoomLevel, setZoomLevel] = useState(15);
+      const [showAllTracks, setShowAllTracks] = usePersistentState(settingsRegistry, 'showAllTracks', true);
+      const [trackSmoothing, setTrackSmoothing] = usePersistentState(settingsRegistry, 'trackSmoothing', 'light'); // key of SMOOTHING_RADIUS
+      const [showLabels, setShowLabels] = usePersistentState(settingsRegistry, 'showLabels', true);
+      const [labelFont, setLabelFont] = usePersistentState(settingsRegistry, 'labelFont', 'Arial');
+      const [labelSize, setLabelSize] = usePersistentState(settingsRegistry, 'labelSize', 16); // px
+      const [showLegend, setShowLegend] = usePersistentState(settingsRegistry, 'showLegend', true);
+      const [animationStyle, setAnimationStyle] = usePersistentState(settingsRegistry, 'animationStyle', 'simultaneous');
+      const [zoomToTrack, setZoomToTrack] = usePersistentState(settingsRegistry, 'zoomToTrack', true);
+      const [zoomLevel, setZoomLevel] = usePersistentState(settingsRegistry, 'zoomLevel', 15);
       const [dragOver, setDragOver] = useState(false);
-      const [exportAspectRatio, setExportAspectRatio] = useState('16:9');
-      const [exportResolution, setExportResolution] = useState('1920x1080');
-      const [exportQuality, setExportQuality] = useState('high');
-      const [exportFPS, setExportFPS] = useState(30);
-      const [exportDuration, setExportDuration] = useState(60); // Video duration in seconds
+      const [exportAspectRatio, setExportAspectRatio] = usePersistentState(settingsRegistry, 'exportAspectRatio', '16:9');
+      const [exportResolution, setExportResolution] = usePersistentState(settingsRegistry, 'exportResolution', '1920x1080');
+      const [exportQuality, setExportQuality] = usePersistentState(settingsRegistry, 'exportQuality', 'high');
+      const [exportFPS, setExportFPS] = usePersistentState(settingsRegistry, 'exportFPS', 30);
+      const [exportDuration, setExportDuration] = usePersistentState(settingsRegistry, 'exportDuration', 60); // Video duration in seconds
       const [isRendering, setIsRendering] = useState(false);
       const [renderProgress, setRenderProgress] = useState(0);
       const [exportFormat, setExportFormat] = useState('');
       const [videoTitle, setVideoTitle] = useState(DEFAULT_VIDEO_TITLE);
-      const [titlePosition, setTitlePosition] = useState('top-center');
-      const [titleSize, setTitleSize] = useState(28);
-      const [titleFont, setTitleFont] = useState('Arial');
-      const [titleColor, setTitleColor] = useState('#ffffff');
-      const [legendPosition, setLegendPosition] = useState('bottom-left');
-      const [legendSize, setLegendSize] = useState(15); // legend text size, reference px
-      const [showWatermark, setShowWatermark] = useState(true);
-      const [watermarkText, setWatermarkText] = useState(DEFAULT_WATERMARK_TEXT);
-      const [watermarkSize, setWatermarkSize] = useState(12); // reference px, smaller than other text
-      const [watermarkOpacity, setWatermarkOpacity] = useState(50); // percent
-      const [statsEnabled, setStatsEnabled] = useState(DEFAULT_STATS_ENABLED); // STAT_DEFINITIONS id -> on/off
-      const [statsUnits, setStatsUnits] = useState('imperial'); // key of STAT_UNITS
+      const [titlePosition, setTitlePosition] = usePersistentState(settingsRegistry, 'titlePosition', 'top-center');
+      const [titleSize, setTitleSize] = usePersistentState(settingsRegistry, 'titleSize', 28);
+      const [titleFont, setTitleFont] = usePersistentState(settingsRegistry, 'titleFont', 'Arial');
+      const [titleColor, setTitleColor] = usePersistentState(settingsRegistry, 'titleColor', '#ffffff');
+      const [legendPosition, setLegendPosition] = usePersistentState(settingsRegistry, 'legendPosition', 'bottom-left');
+      const [legendSize, setLegendSize] = usePersistentState(settingsRegistry, 'legendSize', 15); // legend text size, reference px
+      const [showWatermark, setShowWatermark] = usePersistentState(settingsRegistry, 'showWatermark', true);
+      const [watermarkText, setWatermarkText] = usePersistentState(settingsRegistry, 'watermarkText', DEFAULT_WATERMARK_TEXT);
+      const [watermarkSize, setWatermarkSize] = usePersistentState(settingsRegistry, 'watermarkSize', 12); // reference px, smaller than other text
+      const [watermarkOpacity, setWatermarkOpacity] = usePersistentState(settingsRegistry, 'watermarkOpacity', 50); // percent
+      const [statsEnabled, setStatsEnabled] = usePersistentState(settingsRegistry, 'statsEnabled', DEFAULT_STATS_ENABLED); // STAT_DEFINITIONS id -> on/off
+      const [statsUnits, setStatsUnits] = usePersistentState(settingsRegistry, 'statsUnits', 'imperial'); // key of STAT_UNITS
       const [statsStartProgress, setStatsStartProgress] = useState(0); // progress % where timer/distance start
       const [statsGapIds, setStatsGapIds] = useState([null, null]); // tracks for the gap stat (null = default)
-      const [scoreboardFont, setScoreboardFont] = useState(LEGEND_FONT);
-      const [matchVideoFrame, setMatchVideoFrame] = useState(true); // letterbox preview to export aspect ratio
+      const [scoreboardFont, setScoreboardFont] = usePersistentState(settingsRegistry, 'scoreboardFont', LEGEND_FONT);
+      const [matchVideoFrame, setMatchVideoFrame] = usePersistentState(settingsRegistry, 'matchVideoFrame', true); // letterbox preview to export aspect ratio
       const [stageSize, setStageSize] = useState({ width: 0, height: 0 }); // map area available for the preview
       const [exportScale, setExportScale] = useState(null); // export map scale (getExportRenderPlan) while exporting, else null
       const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -1462,8 +1638,8 @@
 
       // Track comparison / common-point alignment
       const [alignPoint, setAlignPoint] = useState(null); // {lat, lng} picked on the map
-      const [alignRadius, setAlignRadius] = useState(50); // meters
-      const [alignMethod, setAlignMethod] = useState('closest'); // 'closest' | 'earliest' | 'latest'
+      const [alignRadius, setAlignRadius] = usePersistentState(settingsRegistry, 'alignRadius', 50); // meters
+      const [alignMethod, setAlignMethod] = usePersistentState(settingsRegistry, 'alignMethod', 'closest'); // 'closest' | 'earliest' | 'latest'
       const [isPickingPoint, setIsPickingPoint] = useState(false);
       const [alignmentActive, setAlignmentActive] = useState(false);
 
@@ -1477,8 +1653,12 @@
       const lastTimestampRef = useRef(null);
       const isPlayingRef = useRef(isPlaying);
 
-      // Update resolution when aspect ratio changes
+      // Update resolution when aspect ratio changes (keeping one that already
+      // matches, e.g. a remembered 4K choice)
       useEffect(() => {
+        const [resW, resH] = exportResolution.split('x').map(Number);
+        const [ratioW, ratioH] = exportAspectRatio.split(':').map(Number);
+        if (Math.abs(resW / resH - ratioW / ratioH) < 0.01) return;
         if (exportAspectRatio === '16:9') {
           setExportResolution('1920x1080');
         } else if (exportAspectRatio === '9:16') {
@@ -1487,6 +1667,30 @@
           setExportResolution('1920x1440');
         }
       }, [exportAspectRatio]);
+
+      // Save remembered settings whenever one changes
+      const lastSavedSettingsRef = useRef(null);
+      useEffect(() => {
+        const values = {};
+        Object.entries(settingsRegistry.current).forEach(([key, entry]) => { values[key] = entry.value; });
+        const json = JSON.stringify(values);
+        if (json === lastSavedSettingsRef.current) return;
+        lastSavedSettingsRef.current = json;
+        try {
+          window.localStorage.setItem(SETTINGS_STORAGE_KEY, json);
+        } catch (e) {
+          // storage unavailable - settings just won't be remembered
+        }
+      });
+
+      const resetAllSettings = () => {
+        if (!window.confirm('Reset all settings to their defaults? Your loaded tracks are kept.')) return;
+        Object.entries(settingsRegistry.current).forEach(([key, entry]) => {
+          if (key !== 'activeTab') entry.setValue(entry.defaultValue);
+        });
+        setStatsStartProgress(0);
+        setStatsGapIds([null, null]);
+      };
 
       // Preview framing. The Leaflet map (plus legend/title) renders on a
       // "surface" at the reference frame size - 1920x1080 for a 16:9 video, or
@@ -2590,43 +2794,27 @@
         setIsHelpModalOpen(false);
       };
 
-      // Handle progress bar scrubbing (click/drag to seek)
-      const handleProgressBarClick = (e) => {
+      // Scrub the playback bar: press to seek, drag to scrub (mouse and touch).
+      // Pauses playback; doesn't auto-resume.
+      const handleProgressBarPointerDown = (e) => {
+        if (tracks.length === 0 || isRecording) return;
         const progressBar = e.currentTarget;
-        const rect = progressBar.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const newProgress = (clickX / rect.width) * 100;
-        setProgress(Math.max(0, Math.min(100, newProgress)));
-        // Pause animation when manually seeking
         setIsPlaying(false);
-      };
-
-      const handleProgressBarMouseDown = (e) => {
-        const progressBar = e.currentTarget;
-        const wasPaused = !isPlaying;
-        setIsPlaying(false); // Pause during drag
 
         const updateProgress = (clientX) => {
           const rect = progressBar.getBoundingClientRect();
-          const dragX = clientX - rect.left;
-          const newProgress = (dragX / rect.width) * 100;
-          setProgress(Math.max(0, Math.min(100, newProgress)));
+          setProgress(Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100)));
+        };
+        const handleMove = (ev) => updateProgress(ev.clientX);
+        const handleUp = () => {
+          document.removeEventListener('pointermove', handleMove);
+          document.removeEventListener('pointerup', handleUp);
+          document.removeEventListener('pointercancel', handleUp);
         };
 
-        const handleMouseMove = (e) => {
-          updateProgress(e.clientX);
-        };
-
-        const handleMouseUp = () => {
-          document.removeEventListener('mousemove', handleMouseMove);
-          document.removeEventListener('mouseup', handleMouseUp);
-          // Don't auto-resume playing after drag
-        };
-
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-
-        // Update progress immediately on mouse down
+        document.addEventListener('pointermove', handleMove);
+        document.addEventListener('pointerup', handleUp);
+        document.addEventListener('pointercancel', handleUp);
         updateProgress(e.clientX);
       };
 
@@ -3681,417 +3869,351 @@
           
           <div className="main-container">
             <div className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
-              <div 
-                className={`upload-zone ${dragOver ? 'dragover' : ''}`}
-                onClick={() => document.getElementById('file-input').click()}
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-              >
-                <div className="upload-icon">📁</div>
-                <div>Drop GPX files here or click to browse</div>
-                <input
-                  id="file-input"
-                  type="file"
-                  className="file-input"
-                  accept=".gpx"
-                  multiple
-                  onChange={(e) => handleFileUpload(e.target.files)}
-                />
+              <div className="sidebar-tabs" role="tablist">
+                {SIDEBAR_TABS.map(tab => (
+                  <button
+                    key={tab.id}
+                    role="tab"
+                    aria-selected={activeTab === tab.id}
+                    className={`sidebar-tab${activeTab === tab.id ? ' active' : ''}`}
+                    onClick={() => setActiveTab(tab.id)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
-              
-              {tracks.length > 0 && (
-                <div className="track-list">
-                  <div className="control-label">Loaded Tracks ({tracks.length})</div>
-                  {tracks.map(track => (
-                    <div key={track.id} className="track-item">
-                      <div className="track-header">
-                        <span className="track-name" style={{ color: track.color }}>
-                          {track.name}
-                          {track.isExample && (
-                            <span style={{ fontSize: '10px', color: '#999', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '4px', padding: '1px 5px', marginLeft: '6px', verticalAlign: 'middle' }}>
-                              example
-                            </span>
-                          )}
-                        </span>
-                        <button 
-                          className="track-remove"
-                          onClick={() => removeTrack(track.id)}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                      <input
-                        type="text"
-                        className="track-label-input"
-                        placeholder="Enter label (e.g., 'Morning Run', 'Bike Commute')"
-                        value={track.label}
-                        onChange={(e) => updateTrackLabel(track.id, e.target.value)}
-                      />
-                      <div className="track-color-picker">
-                        <label>Color:</label>
-                        <input
-                          type="color"
-                          value={track.color}
-                          onChange={(e) => updateTrackColor(track.id, e.target.value)}
-                        />
-                        <button
-                          className="btn btn-secondary"
-                          style={{ fontSize: '11px', padding: '3px 8px', marginLeft: 'auto' }}
-                          onClick={() => setTrimOpenId(trimOpenId === track.id ? null : track.id)}
-                        >
-                          ✂ Trim
-                        </button>
-                      </div>
-                      {trimOpenId === track.id && (() => {
-                        const lastIdx = track.points.length - 1;
-                        const trimStart = track.trimStart ?? 0;
-                        const trimEnd = track.trimEnd ?? lastIdx;
-                        const kept = trimEnd - trimStart + 1;
-                        return (
-                          <div style={{ marginTop: '8px', padding: '8px', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: '6px' }}>
-                            <label style={{ fontSize: '11px', color: '#999', display: 'block', marginBottom: '2px' }}>
-                              Trim start: point {trimStart}
-                            </label>
-                            <input
-                              type="range"
-                              className="slider"
-                              min="0"
-                              max={lastIdx}
-                              step="1"
-                              value={trimStart}
-                              onChange={(e) => updateTrackTrim(track.id, 'start', parseInt(e.target.value, 10))}
-                            />
-                            <label style={{ fontSize: '11px', color: '#999', display: 'block', margin: '6px 0 2px' }}>
-                              Trim end: point {trimEnd}
-                            </label>
-                            <input
-                              type="range"
-                              className="slider"
-                              min="0"
-                              max={lastIdx}
-                              step="1"
-                              value={trimEnd}
-                              onChange={(e) => updateTrackTrim(track.id, 'end', parseInt(e.target.value, 10))}
-                            />
-                            <div style={{ fontSize: '11px', color: '#ccc', marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span>Keeping {kept.toLocaleString()} of {track.points.length.toLocaleString()} points</span>
-                              {(trimStart > 0 || trimEnd < lastIdx) && (
-                                <button
-                                  className="btn btn-secondary"
-                                  style={{ fontSize: '11px', padding: '2px 8px' }}
-                                  onClick={() => resetTrackTrim(track.id)}
-                                >
-                                  Reset
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  ))}
-                </div>
-              )}
-              
-              {tracks.length > 0 && (
-                <>
-                  <div className="controls">
-                    <CollapsibleSection title="Playback">
-                    <div className="control-group">
-                      <div className="button-group">
-                        <button 
-                          className="btn btn-primary"
-                          onClick={togglePlay}
-                        >
-                          {isPlaying ? '⏸ Pause' : '▶ Play'}
-                        </button>
-                        <button 
-                          className="btn btn-secondary"
-                          onClick={resetAnimation}
-                        >
-                          ↺ Reset
-                        </button>
-                      </div>
-                      <div
-                        className="progress-bar"
-                        onClick={handleProgressBarClick}
-                        onMouseDown={handleProgressBarMouseDown}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        <div
-                          className="progress-fill"
-                          style={{ width: `${progress}%` }}
-                        />
-                        {statsStartProgress > 0 && activeStats.length > 0 && showLegend && (
-                          <div
-                            className="stats-start-marker"
-                            title="Stats start"
-                            style={{ left: `${statsStartProgress}%` }}
-                          />
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="control-group">
-                      <div className="control-label">Duration: {exportDuration}s</div>
-                      <input
-                        type="number"
-                        className="select"
-                        min={minVideoDuration}
-                        max={maxVideoDuration}
-                        step="5"
-                        value={exportDuration}
-                        onChange={(e) => {
-                          const v = parseInt(e.target.value, 10);
-                          if (!isNaN(v)) setExportDuration(v);
-                        }}
-                        onBlur={(e) => {
-                          const v = parseInt(e.target.value, 10);
-                          setExportDuration(isNaN(v) ? 60 : Math.min(maxVideoDuration, Math.max(minVideoDuration, v)));
-                        }}
-                        disabled={isRecording}
-                      />
-                      <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
-                        Length of the animation and exported video, in seconds ({minVideoDuration}-{maxVideoDuration}s).
-                      </p>
-                    </div>
-                    
-                    <div className="control-group">
-                      <div className="control-label">Animation Style</div>
-                      <select
-                        className="select"
-                        value={animationStyle}
-                        onChange={(e) => setAnimationStyle(e.target.value)}
-                        disabled={alignmentActive}
-                      >
-                        <option value="sequential">Sequential (one after another)</option>
-                        <option value="simultaneous">Simultaneous (all at once)</option>
-                      </select>
-                      {alignmentActive && (
-                        <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
-                          Overridden while tracks are aligned at a common point.
-                        </p>
-                      )}
-                    </div>
-                    </CollapsibleSection>
 
-                    {tracks.length >= 2 && (
-                      <CollapsibleSection title="🏁 Compare Tracks">
-                      <div className="control-group">
-                        {alignmentActive && (
-                          <div style={{ fontSize: '12px', color: '#fc4c02', fontWeight: 600, marginBottom: '8px' }}>
-                            Aligned — racing from common point
+              <div className="sidebar-content">
+                {activeTab === 'tracks' && (
+                  <>
+                  <div 
+                    className={`upload-zone ${dragOver ? 'dragover' : ''}`}
+                    onClick={() => document.getElementById('file-input').click()}
+                    onDrop={handleDrop}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                  >
+                    <div className="upload-icon">📁</div>
+                    <div>Drop GPX files here or click to browse</div>
+                    <input
+                      id="file-input"
+                      type="file"
+                      className="file-input"
+                      accept=".gpx"
+                      multiple
+                      onChange={(e) => handleFileUpload(e.target.files)}
+                    />
+                  </div>
+
+                  {tracks.length > 0 && (
+                    <div className="track-list">
+                      <div className="control-label">Loaded Tracks ({tracks.length})</div>
+                      {tracks.map(track => (
+                        <div key={track.id} className="track-item">
+                          <div className="track-header">
+                            <span className="track-name" style={{ color: track.color }}>
+                              {track.name}
+                              {track.isExample && (
+                                <span style={{ fontSize: '10px', color: '#999', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '4px', padding: '1px 5px', marginLeft: '6px', verticalAlign: 'middle' }}>
+                                  example
+                                </span>
+                              )}
+                            </span>
+                            <button 
+                              className="track-remove"
+                              onClick={() => removeTrack(track.id)}
+                            >
+                              ✕
+                            </button>
                           </div>
-                        )}
-                        <button
-                          className={`btn ${isPickingPoint ? 'btn-primary' : 'btn-secondary'}`}
-                          onClick={() => setIsPickingPoint(!isPickingPoint)}
-                          disabled={isRecording || isRendering}
-                          style={{ marginBottom: '8px' }}
-                        >
-                          {isPickingPoint ? '✕ Cancel pick' : (alignPoint ? '📍 Move common point' : '📍 Pick common point')}
-                        </button>
-                        {isPickingPoint && (
-                          <p style={{ fontSize: '11px', color: '#999', marginBottom: '8px' }}>
-                            Click on the map where all tracks should be aligned.
-                          </p>
-                        )}
-                        {alignPoint && (
-                          <>
-                            <div style={{ marginBottom: '8px' }}>
-                              <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>
-                                Radius: {alignRadius} m
-                              </label>
-                              <input
-                                type="range"
-                                className="slider"
-                                min="5"
-                                max="500"
-                                step="5"
-                                value={alignRadius}
-                                onChange={(e) => setAlignRadius(parseInt(e.target.value, 10))}
-                                disabled={isRecording}
-                              />
-                            </div>
-                            <div style={{ marginBottom: '8px' }}>
-                              <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Align each track using</label>
-                              <select
-                                className="select"
-                                value={alignMethod}
-                                onChange={(e) => setAlignMethod(e.target.value)}
-                                disabled={isRecording}
-                              >
-                                <option value="closest">Closest point in circle</option>
-                                <option value="earliest">First pass through circle</option>
-                                <option value="latest">Last pass through circle</option>
-                              </select>
-                            </div>
-                            <div style={{ marginBottom: '8px' }}>
-                              {tracks.map(track => {
-                                const match = alignmentMatches[track.id];
-                                return (
-                                  <div key={track.id} style={{ fontSize: '12px', marginBottom: '2px', color: match ? '#ccc' : '#e0a800' }}>
-                                    <span style={{ display: 'inline-block', width: '10px', height: '10px', backgroundColor: track.color, borderRadius: '2px', marginRight: '6px' }}></span>
-                                    {match
-                                      ? `✓ ${track.label || 'Track'} — ${match.distanceM.toFixed(0)} m from point`
-                                      : `⚠ ${track.label || 'Track'}: no point within radius`}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            {!alignmentActive && (
-                              <button
-                                className="btn btn-primary"
-                                onClick={applyAlignment}
-                                disabled={alignedMatchCount < 2 || isRecording || isRendering}
-                                style={{ marginBottom: '8px' }}
-                              >
-                                ✓ Apply Alignment
-                              </button>
-                            )}
+                          <input
+                            type="text"
+                            className="track-label-input"
+                            placeholder="Enter label (e.g., 'Morning Run', 'Bike Commute')"
+                            value={track.label}
+                            onChange={(e) => updateTrackLabel(track.id, e.target.value)}
+                          />
+                          <div className="track-color-picker">
+                            <label>Color:</label>
+                            <input
+                              type="color"
+                              value={track.color}
+                              onChange={(e) => updateTrackColor(track.id, e.target.value)}
+                            />
                             <button
                               className="btn btn-secondary"
-                              onClick={clearAlignment}
-                              disabled={isRecording || isRendering}
+                              style={{ fontSize: '11px', padding: '3px 8px', marginLeft: 'auto' }}
+                              onClick={() => setTrimOpenId(trimOpenId === track.id ? null : track.id)}
                             >
-                              ✕ Clear
+                              ✂ Trim
                             </button>
-                            {alignedMatchCount < 2 && (
-                              <p style={{ fontSize: '11px', color: '#999', marginTop: '6px' }}>
-                                At least 2 tracks need a point inside the circle. Enlarge the radius or move the point.
+                          </div>
+                          {trimOpenId === track.id && (() => {
+                            const lastIdx = track.points.length - 1;
+                            const trimStart = track.trimStart ?? 0;
+                            const trimEnd = track.trimEnd ?? lastIdx;
+                            const kept = trimEnd - trimStart + 1;
+                            return (
+                              <div style={{ marginTop: '8px', padding: '8px', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: '6px' }}>
+                                <label style={{ fontSize: '11px', color: '#999', display: 'block', marginBottom: '2px' }}>
+                                  Trim start: point {trimStart}
+                                </label>
+                                <input
+                                  type="range"
+                                  className="slider"
+                                  min="0"
+                                  max={lastIdx}
+                                  step="1"
+                                  value={trimStart}
+                                  onChange={(e) => updateTrackTrim(track.id, 'start', parseInt(e.target.value, 10))}
+                                />
+                                <label style={{ fontSize: '11px', color: '#999', display: 'block', margin: '6px 0 2px' }}>
+                                  Trim end: point {trimEnd}
+                                </label>
+                                <input
+                                  type="range"
+                                  className="slider"
+                                  min="0"
+                                  max={lastIdx}
+                                  step="1"
+                                  value={trimEnd}
+                                  onChange={(e) => updateTrackTrim(track.id, 'end', parseInt(e.target.value, 10))}
+                                />
+                                <div style={{ fontSize: '11px', color: '#ccc', marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span>Keeping {kept.toLocaleString()} of {track.points.length.toLocaleString()} points</span>
+                                  {(trimStart > 0 || trimEnd < lastIdx) && (
+                                    <button
+                                      className="btn btn-secondary"
+                                      style={{ fontSize: '11px', padding: '2px 8px' }}
+                                      onClick={() => resetTrackTrim(track.id)}
+                                    >
+                                      Reset
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                    {tracks.length > 0 && (
+                      <>
+                        <div className="controls">
+                          <div className="control-group">
+                            <div className="control-label">Animation Style</div>
+                            <select
+                              className="select"
+                              value={animationStyle}
+                              onChange={(e) => setAnimationStyle(e.target.value)}
+                              disabled={alignmentActive}
+                            >
+                              <option value="sequential">Sequential (one after another)</option>
+                              <option value="simultaneous">Simultaneous (all at once)</option>
+                            </select>
+                            {alignmentActive && (
+                              <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
+                                Overridden while tracks are aligned at a common point.
                               </p>
                             )}
-                          </>
+                          </div>
+
+                          <div className="control-group">
+                            <label className="checkbox-group">
+                              <input
+                                type="checkbox"
+                                className="checkbox"
+                                checked={showAllTracks}
+                                onChange={(e) => setShowAllTracks(e.target.checked)}
+                              />
+                              <span>Show full track preview</span>
+                            </label>
+                          </div>
+
+                          <div className="control-group">
+                            <div className="control-label">Track Smoothing</div>
+                            <select
+                              className="select"
+                              value={trackSmoothing}
+                              onChange={(e) => setTrackSmoothing(e.target.value)}
+                              disabled={isRecording}
+                            >
+                              <option value="off">Off (raw GPS points)</option>
+                              <option value="light">Light</option>
+                              <option value="medium">Medium</option>
+                              <option value="strong">Strong</option>
+                            </select>
+                            <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
+                              Evens out GPS jitter so lines and the follow camera don't wobble. Stronger settings round off sharp turns.
+                            </p>
+                          </div>
+                        </div>
+
+                        {tracks.length >= 2 && (
+                          <div className="controls">
+                            <CollapsibleSection title="🏁 Compare Tracks">
+                            <div className="control-group">
+                              {alignmentActive && (
+                                <div style={{ fontSize: '12px', color: '#fc4c02', fontWeight: 600, marginBottom: '8px' }}>
+                                  Aligned — racing from common point
+                                </div>
+                              )}
+                              <button
+                                className={`btn ${isPickingPoint ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => setIsPickingPoint(!isPickingPoint)}
+                                disabled={isRecording || isRendering}
+                                style={{ marginBottom: '8px' }}
+                              >
+                                {isPickingPoint ? '✕ Cancel pick' : (alignPoint ? '📍 Move common point' : '📍 Pick common point')}
+                              </button>
+                              {isPickingPoint && (
+                                <p style={{ fontSize: '11px', color: '#999', marginBottom: '8px' }}>
+                                  Click on the map where all tracks should be aligned.
+                                </p>
+                              )}
+                              {alignPoint && (
+                                <>
+                                  <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>
+                                      Radius: {alignRadius} m
+                                    </label>
+                                    <input
+                                      type="range"
+                                      className="slider"
+                                      min="5"
+                                      max="500"
+                                      step="5"
+                                      value={alignRadius}
+                                      onChange={(e) => setAlignRadius(parseInt(e.target.value, 10))}
+                                      disabled={isRecording}
+                                    />
+                                  </div>
+                                  <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Align each track using</label>
+                                    <select
+                                      className="select"
+                                      value={alignMethod}
+                                      onChange={(e) => setAlignMethod(e.target.value)}
+                                      disabled={isRecording}
+                                    >
+                                      <option value="closest">Closest point in circle</option>
+                                      <option value="earliest">First pass through circle</option>
+                                      <option value="latest">Last pass through circle</option>
+                                    </select>
+                                  </div>
+                                  <div style={{ marginBottom: '8px' }}>
+                                    {tracks.map(track => {
+                                      const match = alignmentMatches[track.id];
+                                      return (
+                                        <div key={track.id} style={{ fontSize: '12px', marginBottom: '2px', color: match ? '#ccc' : '#e0a800' }}>
+                                          <span style={{ display: 'inline-block', width: '10px', height: '10px', backgroundColor: track.color, borderRadius: '2px', marginRight: '6px' }}></span>
+                                          {match
+                                            ? `✓ ${track.label || 'Track'} — ${match.distanceM.toFixed(0)} m from point`
+                                            : `⚠ ${track.label || 'Track'}: no point within radius`}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                  {!alignmentActive && (
+                                    <button
+                                      className="btn btn-primary"
+                                      onClick={applyAlignment}
+                                      disabled={alignedMatchCount < 2 || isRecording || isRendering}
+                                      style={{ marginBottom: '8px' }}
+                                    >
+                                      ✓ Apply Alignment
+                                    </button>
+                                  )}
+                                  <button
+                                    className="btn btn-secondary"
+                                    onClick={clearAlignment}
+                                    disabled={isRecording || isRendering}
+                                  >
+                                    ✕ Clear
+                                  </button>
+                                  {alignedMatchCount < 2 && (
+                                    <p style={{ fontSize: '11px', color: '#999', marginTop: '6px' }}>
+                                      At least 2 tracks need a point inside the circle. Enlarge the radius or move the point.
+                                    </p>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                            </CollapsibleSection>
+                          </div>
                         )}
-                      </div>
-                      </CollapsibleSection>
+
+                        <div className="stats">
+                          <div className="stat-row">
+                            <span className="stat-label">Total Points:</span>
+                            <span className="stat-value">{totalPoints.toLocaleString()}</span>
+                          </div>
+                          <div className="stat-row">
+                            <span className="stat-label">Total Distance:</span>
+                            <span className="stat-value">{totalDistance.toFixed(2)} km</span>
+                          </div>
+                          <div className="stat-row">
+                            <span className="stat-label">Tracks Loaded:</span>
+                            <span className="stat-value">{tracks.length}</span>
+                          </div>
+                          {alignmentActive && alignedTiming.spanMs > 0 && (
+                            <div className="stat-row">
+                              <span className="stat-label">Race Time:</span>
+                              <span className="stat-value">
+                                {(() => {
+                                  const totalSec = Math.floor(((progress / 100) * alignedTiming.spanMs) / 1000);
+                                  const min = Math.floor(totalSec / 60);
+                                  const sec = totalSec % 60;
+                                  return `${min}:${String(sec).padStart(2, '0')}`;
+                                })()}
+                              </span>
+                            </div>
+                          )}
+                          {!alignmentActive && animationStyle === 'simultaneous' && effectiveTracks.some(t => t.startTime) && (
+                            <div className="stat-row">
+                              <span className="stat-label">Time Range:</span>
+                              <span className="stat-value">
+                                {(() => {
+                                  const tracksWithTime = effectiveTracks.filter(t => t.startTime && t.endTime);
+                                  if (tracksWithTime.length === 0) return 'N/A';
+                                  const earliestStart = new Date(Math.min(...tracksWithTime.map(t => t.startTime.getTime())));
+                                  const latestEnd = new Date(Math.max(...tracksWithTime.map(t => t.endTime.getTime())));
+                                  return `${earliestStart.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - ${latestEnd.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+                                })()}
+                              </span>
+                            </div>
+                          )}
+                          {!alignmentActive && animationStyle === 'simultaneous' && effectiveTracks.some(t => t.startTime) && progress > 0 && (
+                            <div className="stat-row">
+                              <span className="stat-label">Current Time:</span>
+                              <span className="stat-value">
+                                {(() => {
+                                  const tracksWithTime = effectiveTracks.filter(t => t.startTime && t.endTime);
+                                  if (tracksWithTime.length === 0) return 'N/A';
+                                  const earliestStart = Math.min(...tracksWithTime.map(t => t.startTime.getTime()));
+                                  const latestEnd = Math.max(...tracksWithTime.map(t => t.endTime.getTime()));
+                                  const totalTimeSpan = latestEnd - earliestStart;
+                                  const currentAbsoluteTime = earliestStart + (progress / 100) * totalTimeSpan;
+                                  const currentDate = new Date(currentAbsoluteTime);
+                                  return currentDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                                })()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </>
                     )}
+                  </>
+                )}
 
-                    <CollapsibleSection title="Display Options">
-                    <div className="control-group">
-                      <label className="checkbox-group">
-                        <input
-                          type="checkbox"
-                          className="checkbox"
-                          checked={showAllTracks}
-                          onChange={(e) => setShowAllTracks(e.target.checked)}
-                        />
-                        <span>Show full track preview</span>
-                      </label>
-                    </div>
+                {activeTab !== 'tracks' && tracks.length === 0 && (
+                  <p className="sidebar-empty">Load GPX tracks in the Tracks tab first.</p>
+                )}
 
-                    <div className="control-group">
-                      <div className="control-label">Track Smoothing</div>
-                      <select
-                        className="select"
-                        value={trackSmoothing}
-                        onChange={(e) => setTrackSmoothing(e.target.value)}
-                        disabled={isRecording}
-                      >
-                        <option value="off">Off (raw GPS points)</option>
-                        <option value="light">Light</option>
-                        <option value="medium">Medium</option>
-                        <option value="strong">Strong</option>
-                      </select>
-                      <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
-                        Evens out GPS jitter so lines and the follow camera don't wobble. Stronger settings round off sharp turns.
-                      </p>
-                    </div>
-
-                    <div className="control-group">
-                      <label className="checkbox-group">
-                        <input
-                          type="checkbox"
-                          className="checkbox"
-                          checked={showLabels}
-                          onChange={(e) => setShowLabels(e.target.checked)}
-                        />
-                        <span>Show track labels</span>
-                      </label>
-                    </div>
-
-                    {showLabels && (
-                      <div style={{ marginBottom: '12px', marginLeft: '24px' }}>
-                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Label Font</label>
-                        <select
-                          className="select"
-                          value={labelFont}
-                          onChange={(e) => setLabelFont(e.target.value)}
-                          disabled={isRecording}
-                          style={{ marginBottom: '8px' }}
-                        >
-                          <option value="Arial">Arial</option>
-                          <option value="Helvetica">Helvetica</option>
-                          <option value="Georgia">Georgia</option>
-                          <option value="Times New Roman">Times New Roman</option>
-                          <option value="Courier New">Courier New</option>
-                          <option value="Verdana">Verdana</option>
-                        </select>
-                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Label Size: {labelSize}px</label>
-                        <input
-                          type="range"
-                          className="slider"
-                          min="10"
-                          max="32"
-                          step="1"
-                          value={labelSize}
-                          onChange={(e) => setLabelSize(parseInt(e.target.value, 10))}
-                          disabled={isRecording}
-                        />
-                      </div>
-                    )}
-
-                    <div className="control-group">
-                      <label className="checkbox-group">
-                        <input
-                          type="checkbox"
-                          className="checkbox"
-                          checked={showWatermark}
-                          onChange={(e) => setShowWatermark(e.target.checked)}
-                          disabled={isRecording}
-                        />
-                        <span>Show watermark</span>
-                      </label>
-                    </div>
-
-                    {showWatermark && (
-                      <div style={{ marginBottom: '12px', marginLeft: '24px' }}>
-                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Watermark Text</label>
-                        <input
-                          type="text"
-                          className="select"
-                          value={watermarkText}
-                          onChange={(e) => setWatermarkText(e.target.value)}
-                          placeholder={DEFAULT_WATERMARK_TEXT}
-                          disabled={isRecording}
-                          style={{ width: '100%', fontFamily: 'inherit', marginBottom: '8px' }}
-                        />
-                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Watermark Size: {watermarkSize}px</label>
-                        <input
-                          type="range"
-                          className="slider"
-                          min="8"
-                          max="32"
-                          step="1"
-                          value={watermarkSize}
-                          onChange={(e) => setWatermarkSize(parseInt(e.target.value, 10))}
-                          disabled={isRecording}
-                        />
-                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginTop: '8px', marginBottom: '4px' }}>Watermark Opacity: {watermarkOpacity}%</label>
-                        <input
-                          type="range"
-                          className="slider"
-                          min="10"
-                          max="100"
-                          step="5"
-                          value={watermarkOpacity}
-                          onChange={(e) => setWatermarkOpacity(parseInt(e.target.value, 10))}
-                          disabled={isRecording}
-                        />
-                      </div>
-                    )}
-
+                {activeTab === 'camera' && tracks.length > 0 && (
+                  <div className="controls">
                     <div className="control-group">
                       <label className="checkbox-group">
                         <input
@@ -4142,158 +4264,338 @@
                         </div>
                       </>
                     )}
-                    </CollapsibleSection>
                   </div>
+                )}
 
-                  <div className="controls">
-                    <CollapsibleSection title="Scoreboard & Stats">
-                    <div className="control-group">
-                      <label className="checkbox-group">
-                        <input
-                          type="checkbox"
-                          className="checkbox"
-                          checked={showLegend}
-                          onChange={(e) => setShowLegend(e.target.checked)}
-                        />
-                        <span>Show legend / scoreboard</span>
-                      </label>
-                    </div>
-
-                    {showLegend && (
-                      <>
-                        <div className="control-group">
+                {activeTab === 'overlays' && tracks.length > 0 && (
+                  <>
+                    <div className="controls">
+                      <CollapsibleSection title="Video Title">
+                      <div className="control-group">
+                        <div style={{ marginBottom: '12px' }}>
+                          <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Title Text</label>
+                          <input
+                            type="text"
+                            className="select"
+                            value={videoTitle}
+                            onChange={(e) => setVideoTitle(e.target.value)}
+                            placeholder="Enter title (optional)"
+                            disabled={isRecording}
+                            style={{ width: '100%', fontFamily: 'inherit' }}
+                          />
+                        </div>
+                        <div style={{ marginBottom: '12px' }}>
                           <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Position</label>
                           <select
                             className="select"
-                            value={legendPosition}
-                            onChange={(e) => setLegendPosition(e.target.value)}
-                            style={{ width: '100%', marginBottom: '8px' }}
+                            value={titlePosition}
+                            onChange={(e) => setTitlePosition(e.target.value)}
+                            disabled={isRecording}
                           >
                             <option value="top-left">Top Left</option>
+                            <option value="top-center">Top Center</option>
                             <option value="top-right">Top Right</option>
                             <option value="bottom-left">Bottom Left</option>
+                            <option value="bottom-center">Bottom Center</option>
                             <option value="bottom-right">Bottom Right</option>
                           </select>
+                        </div>
+                        <div style={{ marginBottom: '12px' }}>
+                          <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Font Size: {titleSize}px</label>
+                          <input
+                            type="range"
+                            min="16"
+                            max="72"
+                            step="2"
+                            value={titleSize}
+                            onChange={(e) => setTitleSize(parseInt(e.target.value))}
+                            disabled={isRecording}
+                            style={{ width: '100%' }}
+                          />
+                        </div>
+                        <div style={{ marginBottom: '12px' }}>
                           <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Font</label>
                           <select
                             className="select"
-                            value={scoreboardFont}
-                            onChange={(e) => setScoreboardFont(e.target.value)}
+                            value={titleFont}
+                            onChange={(e) => setTitleFont(e.target.value)}
                             disabled={isRecording}
-                            style={{ width: '100%', marginBottom: '8px' }}
                           >
-                            {SCOREBOARD_FONTS.map(f => (
-                              <option key={f.label} value={f.value}>{f.label}</option>
-                            ))}
+                            <option value="Arial">Arial</option>
+                            <option value="Helvetica">Helvetica</option>
+                            <option value="Georgia">Georgia</option>
+                            <option value="Times New Roman">Times New Roman</option>
+                            <option value="Courier New">Courier New</option>
+                            <option value="Verdana">Verdana</option>
                           </select>
-                          <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Size: {legendSize}px</label>
+                        </div>
+                        <div style={{ marginBottom: '12px' }}>
+                          <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Color</label>
+                          <input
+                            type="color"
+                            value={titleColor}
+                            onChange={(e) => setTitleColor(e.target.value)}
+                            disabled={isRecording}
+                            style={{ width: '100%', height: '32px', cursor: 'pointer' }}
+                          />
+                        </div>
+
+                      </div>
+                      </CollapsibleSection>
+                    </div>
+
+                    <div className="controls">
+                      <CollapsibleSection title="Scoreboard & Stats">
+                      <div className="control-group">
+                        <label className="checkbox-group">
+                          <input
+                            type="checkbox"
+                            className="checkbox"
+                            checked={showLegend}
+                            onChange={(e) => setShowLegend(e.target.checked)}
+                          />
+                          <span>Show legend / scoreboard</span>
+                        </label>
+                      </div>
+
+                      {showLegend && (
+                        <>
+                          <div className="control-group">
+                            <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Position</label>
+                            <select
+                              className="select"
+                              value={legendPosition}
+                              onChange={(e) => setLegendPosition(e.target.value)}
+                              style={{ width: '100%', marginBottom: '8px' }}
+                            >
+                              <option value="top-left">Top Left</option>
+                              <option value="top-right">Top Right</option>
+                              <option value="bottom-left">Bottom Left</option>
+                              <option value="bottom-right">Bottom Right</option>
+                            </select>
+                            <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Font</label>
+                            <select
+                              className="select"
+                              value={scoreboardFont}
+                              onChange={(e) => setScoreboardFont(e.target.value)}
+                              disabled={isRecording}
+                              style={{ width: '100%', marginBottom: '8px' }}
+                            >
+                              {SCOREBOARD_FONTS.map(f => (
+                                <option key={f.label} value={f.value}>{f.label}</option>
+                              ))}
+                            </select>
+                            <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Size: {legendSize}px</label>
+                            <input
+                              type="range"
+                              className="slider"
+                              min="10"
+                              max="40"
+                              step="1"
+                              value={legendSize}
+                              onChange={(e) => setLegendSize(parseInt(e.target.value, 10))}
+                              disabled={isRecording}
+                            />
+                          </div>
+
+                          <div className="control-group">
+                            <div className="control-label">Stats</div>
+                            {STAT_DEFINITIONS.map(def => {
+                              const available = isStatAvailable(def);
+                              const reason = def.requires ? 'no data in these tracks' : 'needs 2+ tracks';
+                              return (
+                                <label key={def.id} className="checkbox-group" style={{ opacity: available ? 1 : 0.5 }}>
+                                  <input
+                                    type="checkbox"
+                                    className="checkbox"
+                                    checked={!!statsEnabled[def.id] && available}
+                                    onChange={(e) => setStatsEnabled(prev => ({ ...prev, [def.id]: e.target.checked }))}
+                                    disabled={isRecording || !available}
+                                  />
+                                  <span>{def.label}{available ? '' : ` (${reason})`}</span>
+                                </label>
+                              );
+                            })}
+                            {statsEnabled.gap && gapTracks && (
+                              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginLeft: '24px', marginTop: '4px' }}>
+                                {[0, 1].map(i => (
+                                  <select
+                                    key={i}
+                                    className="select"
+                                    value={gapTracks[i].id}
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      setStatsGapIds(prev => {
+                                        const next = [...prev];
+                                        next[i] = value;
+                                        return next;
+                                      });
+                                    }}
+                                    disabled={isRecording}
+                                    style={{ flex: 1, minWidth: 0 }}
+                                  >
+                                    {tracks.map(t => (
+                                      <option key={t.id} value={t.id}>{t.label}</option>
+                                    ))}
+                                  </select>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {activeStats.length > 0 && (
+                            <>
+                              <div className="control-group">
+                                <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Units</label>
+                                <select
+                                  className="select"
+                                  value={statsUnits}
+                                  onChange={(e) => setStatsUnits(e.target.value)}
+                                  disabled={isRecording}
+                                  style={{ width: '100%' }}
+                                >
+                                  {Object.entries(STAT_UNITS).map(([key, u]) => (
+                                    <option key={key} value={key}>{u.label}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div className="control-group">
+                                <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Stats Start</label>
+                                <div className="button-group">
+                                  <button
+                                    className="btn btn-secondary"
+                                    onClick={() => setStatsStartProgress(progress)}
+                                    disabled={isRecording}
+                                  >
+                                    {'\u2691'} Set start here
+                                  </button>
+                                  <button
+                                    className="btn btn-secondary"
+                                    onClick={() => setStatsStartProgress(0)}
+                                    disabled={isRecording || statsStartProgress === 0}
+                                  >
+                                    Reset
+                                  </button>
+                                </div>
+                                <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
+                                  {statsStartProgress === 0
+                                    ? 'Timer and distance start at the beginning. Scrub to the race start and click "Set start here" to change it.'
+                                    : `Timer and distance start ${((statsStartProgress / 100) * exportDuration).toFixed(1)}s into the video (orange mark on the playback bar); the timer counts down before it.`}
+                                </p>
+                              </div>
+                            </>
+                          )}
+                        </>
+                      )}
+                      </CollapsibleSection>
+                    </div>
+
+                    <div className="controls">
+                      <CollapsibleSection title="Track Labels" defaultOpen={false}>
+                      <div className="control-group">
+                        <label className="checkbox-group">
+                          <input
+                            type="checkbox"
+                            className="checkbox"
+                            checked={showLabels}
+                            onChange={(e) => setShowLabels(e.target.checked)}
+                          />
+                          <span>Show track labels</span>
+                        </label>
+                      </div>
+
+                      {showLabels && (
+                        <div style={{ marginBottom: '12px', marginLeft: '24px' }}>
+                          <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Label Font</label>
+                          <select
+                            className="select"
+                            value={labelFont}
+                            onChange={(e) => setLabelFont(e.target.value)}
+                            disabled={isRecording}
+                            style={{ marginBottom: '8px' }}
+                          >
+                            <option value="Arial">Arial</option>
+                            <option value="Helvetica">Helvetica</option>
+                            <option value="Georgia">Georgia</option>
+                            <option value="Times New Roman">Times New Roman</option>
+                            <option value="Courier New">Courier New</option>
+                            <option value="Verdana">Verdana</option>
+                          </select>
+                          <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Label Size: {labelSize}px</label>
                           <input
                             type="range"
                             className="slider"
                             min="10"
-                            max="40"
+                            max="32"
                             step="1"
-                            value={legendSize}
-                            onChange={(e) => setLegendSize(parseInt(e.target.value, 10))}
+                            value={labelSize}
+                            onChange={(e) => setLabelSize(parseInt(e.target.value, 10))}
                             disabled={isRecording}
                           />
                         </div>
+                      )}
+                      </CollapsibleSection>
+                    </div>
 
-                        <div className="control-group">
-                          <div className="control-label">Stats</div>
-                          {STAT_DEFINITIONS.map(def => {
-                            const available = isStatAvailable(def);
-                            const reason = def.requires ? 'no data in these tracks' : 'needs 2+ tracks';
-                            return (
-                              <label key={def.id} className="checkbox-group" style={{ opacity: available ? 1 : 0.5 }}>
-                                <input
-                                  type="checkbox"
-                                  className="checkbox"
-                                  checked={!!statsEnabled[def.id] && available}
-                                  onChange={(e) => setStatsEnabled(prev => ({ ...prev, [def.id]: e.target.checked }))}
-                                  disabled={isRecording || !available}
-                                />
-                                <span>{def.label}{available ? '' : ` (${reason})`}</span>
-                              </label>
-                            );
-                          })}
-                          {statsEnabled.gap && gapTracks && (
-                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginLeft: '24px', marginTop: '4px' }}>
-                              {[0, 1].map(i => (
-                                <select
-                                  key={i}
-                                  className="select"
-                                  value={gapTracks[i].id}
-                                  onChange={(e) => {
-                                    const value = e.target.value;
-                                    setStatsGapIds(prev => {
-                                      const next = [...prev];
-                                      next[i] = value;
-                                      return next;
-                                    });
-                                  }}
-                                  disabled={isRecording}
-                                  style={{ flex: 1, minWidth: 0 }}
-                                >
-                                  {tracks.map(t => (
-                                    <option key={t.id} value={t.id}>{t.label}</option>
-                                  ))}
-                                </select>
-                              ))}
-                            </div>
-                          )}
+                    <div className="controls">
+                      <CollapsibleSection title="Watermark" defaultOpen={false}>
+                      <div className="control-group">
+                        <label className="checkbox-group">
+                          <input
+                            type="checkbox"
+                            className="checkbox"
+                            checked={showWatermark}
+                            onChange={(e) => setShowWatermark(e.target.checked)}
+                            disabled={isRecording}
+                          />
+                          <span>Show watermark</span>
+                        </label>
+                      </div>
+
+                      {showWatermark && (
+                        <div style={{ marginBottom: '12px', marginLeft: '24px' }}>
+                          <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Watermark Text</label>
+                          <input
+                            type="text"
+                            className="select"
+                            value={watermarkText}
+                            onChange={(e) => setWatermarkText(e.target.value)}
+                            placeholder={DEFAULT_WATERMARK_TEXT}
+                            disabled={isRecording}
+                            style={{ width: '100%', fontFamily: 'inherit', marginBottom: '8px' }}
+                          />
+                          <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Watermark Size: {watermarkSize}px</label>
+                          <input
+                            type="range"
+                            className="slider"
+                            min="8"
+                            max="32"
+                            step="1"
+                            value={watermarkSize}
+                            onChange={(e) => setWatermarkSize(parseInt(e.target.value, 10))}
+                            disabled={isRecording}
+                          />
+                          <label style={{ fontSize: '12px', color: '#999', display: 'block', marginTop: '8px', marginBottom: '4px' }}>Watermark Opacity: {watermarkOpacity}%</label>
+                          <input
+                            type="range"
+                            className="slider"
+                            min="10"
+                            max="100"
+                            step="5"
+                            value={watermarkOpacity}
+                            onChange={(e) => setWatermarkOpacity(parseInt(e.target.value, 10))}
+                            disabled={isRecording}
+                          />
                         </div>
+                      )}
+                      </CollapsibleSection>
+                    </div>
+                  </>
+                )}
 
-                        {activeStats.length > 0 && (
-                          <>
-                            <div className="control-group">
-                              <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Units</label>
-                              <select
-                                className="select"
-                                value={statsUnits}
-                                onChange={(e) => setStatsUnits(e.target.value)}
-                                disabled={isRecording}
-                                style={{ width: '100%' }}
-                              >
-                                {Object.entries(STAT_UNITS).map(([key, u]) => (
-                                  <option key={key} value={key}>{u.label}</option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div className="control-group">
-                              <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Stats Start</label>
-                              <div className="button-group">
-                                <button
-                                  className="btn btn-secondary"
-                                  onClick={() => setStatsStartProgress(progress)}
-                                  disabled={isRecording}
-                                >
-                                  {'\u2691'} Set start here
-                                </button>
-                                <button
-                                  className="btn btn-secondary"
-                                  onClick={() => setStatsStartProgress(0)}
-                                  disabled={isRecording || statsStartProgress === 0}
-                                >
-                                  Reset
-                                </button>
-                              </div>
-                              <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
-                                {statsStartProgress === 0
-                                  ? 'Timer and distance start at the beginning. Scrub to the race start and click "Set start here" to change it.'
-                                  : `Timer and distance start ${((statsStartProgress / 100) * exportDuration).toFixed(1)}s into the video (orange mark on the playback bar); the timer counts down before it.`}
-                              </p>
-                            </div>
-                          </>
-                        )}
-                      </>
-                    )}
-                    </CollapsibleSection>
-                  </div>
-
+                {activeTab === 'export' && tracks.length > 0 && (
                   <div className="controls">
-                    <CollapsibleSection title="Export Settings">
                     <div className="control-group">
                       <div style={{ marginBottom: '12px' }}>
                         <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Aspect Ratio</label>
@@ -4391,160 +4693,29 @@
                           </span>
                         </div>
                         <div style={{ fontSize: '10px', color: '#666', marginTop: '4px' }}>
-                          Set with the Duration control under Playback
+                          Set with Duration under the map preview
                         </div>
                       </div>
 
                     </div>
-                    </CollapsibleSection>
-
-                    <CollapsibleSection title="Video Title" defaultOpen={false}>
-                    <div className="control-group">
-                      <div style={{ marginBottom: '12px' }}>
-                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Title Text</label>
-                        <input
-                          type="text"
-                          className="select"
-                          value={videoTitle}
-                          onChange={(e) => setVideoTitle(e.target.value)}
-                          placeholder="Enter title (optional)"
-                          disabled={isRecording}
-                          style={{ width: '100%', fontFamily: 'inherit' }}
-                        />
-                      </div>
-                      <div style={{ marginBottom: '12px' }}>
-                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Position</label>
-                        <select
-                          className="select"
-                          value={titlePosition}
-                          onChange={(e) => setTitlePosition(e.target.value)}
-                          disabled={isRecording}
-                        >
-                          <option value="top-left">Top Left</option>
-                          <option value="top-center">Top Center</option>
-                          <option value="top-right">Top Right</option>
-                          <option value="bottom-left">Bottom Left</option>
-                          <option value="bottom-center">Bottom Center</option>
-                          <option value="bottom-right">Bottom Right</option>
-                        </select>
-                      </div>
-                      <div style={{ marginBottom: '12px' }}>
-                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Font Size: {titleSize}px</label>
-                        <input
-                          type="range"
-                          min="16"
-                          max="72"
-                          step="2"
-                          value={titleSize}
-                          onChange={(e) => setTitleSize(parseInt(e.target.value))}
-                          disabled={isRecording}
-                          style={{ width: '100%' }}
-                        />
-                      </div>
-                      <div style={{ marginBottom: '12px' }}>
-                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Font</label>
-                        <select
-                          className="select"
-                          value={titleFont}
-                          onChange={(e) => setTitleFont(e.target.value)}
-                          disabled={isRecording}
-                        >
-                          <option value="Arial">Arial</option>
-                          <option value="Helvetica">Helvetica</option>
-                          <option value="Georgia">Georgia</option>
-                          <option value="Times New Roman">Times New Roman</option>
-                          <option value="Courier New">Courier New</option>
-                          <option value="Verdana">Verdana</option>
-                        </select>
-                      </div>
-                      <div style={{ marginBottom: '12px' }}>
-                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Color</label>
-                        <input
-                          type="color"
-                          value={titleColor}
-                          onChange={(e) => setTitleColor(e.target.value)}
-                          disabled={isRecording}
-                          style={{ width: '100%', height: '32px', cursor: 'pointer' }}
-                        />
-                      </div>
-
-                    </div>
-                    </CollapsibleSection>
-
-                    <div className="control-group">
-                      <button
-                        className="btn btn-primary"
-                        onClick={isRecording ? stopRecording : startRecording}
-                        disabled={isRendering || (isPlaying && !isRecording)}
-                      >
-                        {isRecording ? '⏹ Stop Export' : '🎥 Export Video'}
-                      </button>
-                      <p style={{ fontSize: '11px', color: '#999', marginTop: '8px' }}>
-                        Renders video with selected quality and frame rate. Higher settings = larger file size.
-                      </p>
-                    </div>
                   </div>
-                  
-                  <div className="stats">
-                    <div className="stat-row">
-                      <span className="stat-label">Total Points:</span>
-                      <span className="stat-value">{totalPoints.toLocaleString()}</span>
-                    </div>
-                    <div className="stat-row">
-                      <span className="stat-label">Total Distance:</span>
-                      <span className="stat-value">{totalDistance.toFixed(2)} km</span>
-                    </div>
-                    <div className="stat-row">
-                      <span className="stat-label">Tracks Loaded:</span>
-                      <span className="stat-value">{tracks.length}</span>
-                    </div>
-                    {alignmentActive && alignedTiming.spanMs > 0 && (
-                      <div className="stat-row">
-                        <span className="stat-label">Race Time:</span>
-                        <span className="stat-value">
-                          {(() => {
-                            const totalSec = Math.floor(((progress / 100) * alignedTiming.spanMs) / 1000);
-                            const min = Math.floor(totalSec / 60);
-                            const sec = totalSec % 60;
-                            return `${min}:${String(sec).padStart(2, '0')}`;
-                          })()}
-                        </span>
-                      </div>
-                    )}
-                    {!alignmentActive && animationStyle === 'simultaneous' && effectiveTracks.some(t => t.startTime) && (
-                      <div className="stat-row">
-                        <span className="stat-label">Time Range:</span>
-                        <span className="stat-value">
-                          {(() => {
-                            const tracksWithTime = effectiveTracks.filter(t => t.startTime && t.endTime);
-                            if (tracksWithTime.length === 0) return 'N/A';
-                            const earliestStart = new Date(Math.min(...tracksWithTime.map(t => t.startTime.getTime())));
-                            const latestEnd = new Date(Math.max(...tracksWithTime.map(t => t.endTime.getTime())));
-                            return `${earliestStart.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - ${latestEnd.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
-                          })()}
-                        </span>
-                      </div>
-                    )}
-                    {!alignmentActive && animationStyle === 'simultaneous' && effectiveTracks.some(t => t.startTime) && progress > 0 && (
-                      <div className="stat-row">
-                        <span className="stat-label">Current Time:</span>
-                        <span className="stat-value">
-                          {(() => {
-                            const tracksWithTime = effectiveTracks.filter(t => t.startTime && t.endTime);
-                            if (tracksWithTime.length === 0) return 'N/A';
-                            const earliestStart = Math.min(...tracksWithTime.map(t => t.startTime.getTime()));
-                            const latestEnd = Math.max(...tracksWithTime.map(t => t.endTime.getTime()));
-                            const totalTimeSpan = latestEnd - earliestStart;
-                            const currentAbsoluteTime = earliestStart + (progress / 100) * totalTimeSpan;
-                            const currentDate = new Date(currentAbsoluteTime);
-                            return currentDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                          })()}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
+                )}
+
+                <button className="reset-settings-link" onClick={resetAllSettings} disabled={isRecording}>
+                  Reset all settings to defaults
+                </button>
+              </div>
+
+              {/* Pinned so exporting never needs scrolling */}
+              <div className="sidebar-footer">
+                <button
+                  className="btn btn-primary"
+                  onClick={isRecording ? stopRecording : startRecording}
+                  disabled={tracks.length === 0 || isRendering || (isPlaying && !isRecording)}
+                >
+                  {isRecording ? '⏹ Stop Export' : '🎥 Export Video'}
+                </button>
+              </div>
             </div>
             
             <div className="map-container">
@@ -4659,6 +4830,65 @@
               </div>
               </div>
               </div>
+
+              {/* Transport bar: playback controls live under the preview, like a video editor */}
+              <div className="transport-bar">
+                <button
+                  className="btn btn-primary transport-btn"
+                  onClick={togglePlay}
+                  disabled={tracks.length === 0 || isRecording}
+                  title={isPlaying ? 'Pause' : 'Play'}
+                >
+                  {isPlaying ? '⏸' : '▶'}
+                </button>
+                <button
+                  className="btn btn-secondary transport-btn"
+                  onClick={resetAnimation}
+                  disabled={tracks.length === 0 || isRecording}
+                  title="Back to start"
+                >
+                  ↺
+                </button>
+                <div
+                  className="progress-bar transport-scrubber"
+                  onPointerDown={handleProgressBarPointerDown}
+                >
+                  <div
+                    className="progress-fill"
+                    style={{ width: `${progress}%` }}
+                  />
+                  {statsStartProgress > 0 && activeStats.length > 0 && showLegend && (
+                    <div
+                      className="stats-start-marker"
+                      title="Stats start"
+                      style={{ left: `${statsStartProgress}%` }}
+                    />
+                  )}
+                </div>
+                <span className="transport-time">
+                  {formatRaceTime((progress / 100) * exportDuration * 1000)} / {formatRaceTime(exportDuration * 1000)}
+                </span>
+                <label className="transport-duration" title={`Length of the animation and exported video (${minVideoDuration}-${maxVideoDuration}s)`}>
+                  Duration
+                  <input
+                    type="number"
+                    min={minVideoDuration}
+                    max={maxVideoDuration}
+                    step="5"
+                    value={exportDuration}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      if (!isNaN(v)) setExportDuration(v);
+                    }}
+                    onBlur={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      setExportDuration(isNaN(v) ? 60 : Math.min(maxVideoDuration, Math.max(minVideoDuration, v)));
+                    }}
+                    disabled={isRecording}
+                  />
+                  s
+                </label>
+              </div>
             </div>
           </div>
 
@@ -4697,11 +4927,11 @@
                     <h2>How to Use</h2>
                     <ol>
                       <li><strong>Upload GPX files:</strong> Drag and drop your GPX files into the upload zone, or click to browse</li>
-                      <li><strong>Customize tracks:</strong> Edit track labels, change colors, and adjust settings in the sidebar</li>
-                      <li><strong>Preview animation:</strong> Click Play to see how your tracks will animate on the map</li>
-                      <li><strong>Adjust settings:</strong> Set the duration, zoom level, label styling, and display options; trim tracks if needed</li>
-                      <li><strong>Compare tracks (optional):</strong> With 2+ tracks loaded, use "🏁 Compare Tracks" to pick a common point on the map, adjust the radius circle, and align tracks from different days to race from that point</li>
-                      <li><strong>Export video:</strong> Configure video settings (resolution, duration, FPS) and click "Export Video"</li>
+                      <li><strong>Customize tracks:</strong> In the Tracks tab, edit track labels, change colors, trim, and smooth tracks</li>
+                      <li><strong>Preview animation:</strong> Use the play bar under the map (▶, scrubber, Duration) - the preview shows exactly what the video will look like</li>
+                      <li><strong>Adjust settings:</strong> Camera tab for zoom and follow; Overlays tab for the title, scoreboard &amp; stats, track labels, and watermark. Settings are remembered in this browser</li>
+                      <li><strong>Compare tracks (optional):</strong> With 2+ tracks loaded, use "🏁 Compare Tracks" in the Tracks tab to pick a common point on the map, adjust the radius circle, and align tracks from different days to race from that point</li>
+                      <li><strong>Export video:</strong> Pick the format in the Export tab (aspect ratio, resolution, quality, FPS) and click "Export Video" at the bottom of the sidebar</li>
                       <li><strong>Download:</strong> Wait for the export to complete, then download your animated video</li>
                     </ol>
                     <p>
@@ -4754,7 +4984,7 @@
                       <div className="faq-question">How do I compare tracks recorded on different days?</div>
                       <div className="faq-answer">
                         Tracks from different days don't overlap in time, so "Simultaneous" mode can't race them.
-                        Instead, open "🏁 Compare Tracks" in the sidebar: click "Pick common point" and click the map
+                        Instead, open "🏁 Compare Tracks" in the Tracks tab: click "Pick common point" and click the map
                         where all tracks pass (e.g., a shared start line), adjust the radius circle so every track has
                         a point inside it, choose how to match (closest point, first pass, or last pass through the
                         circle), and click "Apply Alignment". All tracks will then animate from that point together,

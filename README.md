@@ -80,6 +80,7 @@ A beautiful, interactive web application for visualizing and animating GPS track
 - **⏱️ Duration Control** - Set the animation/video length directly (5-300 seconds)
 - **✂️ Track Trimming** - Cut unwanted points from the start or end of any track (reversible)
 - **〰️ Smooth Motion** - Track heads glide between GPS points, and optional Track Smoothing (Off/Light/Medium/Strong) removes GPS jitter
+- **🗂️ Tabbed Settings** - Tracks / Camera / Overlays / Export tabs, playback controls under the preview, and your settings remembered between visits
 - **📊 Scoreboard & Stats** - Race timer, speed, distance, heart rate, stroke rate, and the gap between two tracks, in one on-video scoreboard (Imperial or Metric), with an adjustable start point
 - **💧 Watermark** - "Made at Flyinamas.com" in the lower-right corner by default; change the text, size, and opacity, or turn it off
 - **🖼️ What You See Is What You Export** - The preview is framed to the video's aspect ratio and matches the exported video exactly, at any resolution
