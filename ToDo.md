@@ -1,5 +1,10 @@
 To Do List:
 
+## Done in v3.14.0
+
+- Leaderboard shows each racing track's gap to the leader (leader "—", others e.g. "-0.50 mi") instead of
+  its distance to the finish.
+
 ## Done in v3.13.1
 
 - Exports felt slower on the phone: exports are now ~2x faster everywhere (5 s / 1080p at zoom 17: 42 s ->

@@ -1232,6 +1232,8 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.14.0 - Leaderboard shows each racing track's gap to the leader (e.g. "-0.50 mi", "-640 ft") instead of its
+    //          distance to the finish; the leader shows a dash (or its finish time once finished). Ranking unchanged.
     // 3.13.1 - Faster exports (~2x: 5 s / 1080p at zoom 17 went 42 s -> 22 s): removed the fixed 150 ms pause per frame
     //          (one animation frame + the existing tile-load poll is enough - Leaflet creates the tile images during
     //          setView); captureFrame no longer copies Leaflet's track canvas (drawTracksDirect draws the tracks; the
@@ -1389,7 +1391,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.13.1";
+    const APP_VERSION = "3.14.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -2965,7 +2967,9 @@
       };
 
       // Leaderboard rows at a progress, in rank order: finished tracks first (by
-      // finish time), then by straight-line distance to go; not-yet-started last
+      // finish time), then by straight-line distance to go; not-yet-started last.
+      // Racing tracks show their gap to the leader (e.g. "-0.50 mi"); the leader
+      // shows a dash (or its finish time if it has finished).
       const computeLeaderboard = (progressPercent) => {
         if (!finishPoint) return [];
         const target = { lat: finishPoint.lat, lon: finishPoint.lng };
@@ -2980,9 +2984,25 @@
           }
           if (!head) return { track, order, group: 2, key: 0, text: '\u2014', finished: false };
           const meters = getDistance(getHeadPoint(track, head), target) * 1000;
-          return { track, order, group: 1, key: meters, text: formatShortDistance(meters, statsUnits), finished: false };
+          return { track, order, group: 1, key: meters, text: '', finished: false };
         });
-        return rows.sort((a, b) => a.group - b.group || a.key - b.key || a.order - b.order);
+        rows.sort((a, b) => a.group - b.group || a.key - b.key || a.order - b.order);
+
+        // Gap to the leader, measured in distance to go (a finished leader has 0 to go)
+        const leader = rows[0];
+        const leaderToGo = leader.group === 0 ? 0 : leader.key;
+        rows.forEach((row, i) => {
+          if (row.group !== 1) return;
+          if (i === 0) {
+            row.text = '\u2014';
+            return;
+          }
+          const gap = row.key - leaderToGo;
+          row.text = gap * STAT_UNITS[statsUnits].mToShort < 0.5
+            ? `0 ${STAT_UNITS[statsUnits].short}`
+            : `-${formatShortDistance(gap, statsUnits)}`;
+        });
+        return rows;
       };
 
       // Draw the leaderboard panel (preview overlay and captureFrame). `avoid` is
@@ -3020,8 +3040,8 @@
         const nameWidth = Math.max(...rows.map(r => measure(r.track.label, itemFont)));
         // Fixed-width value column (templates) so the panel doesn't resize every frame
         const valueWidth = Math.max(
-          measure(`0.00 ${STAT_UNITS[statsUnits].distance}`, valueFont),
-          measure(`999 ${STAT_UNITS[statsUnits].short}`, valueFont),
+          measure(`-0.00 ${STAT_UNITS[statsUnits].distance}`, valueFont),
+          measure(`-999 ${STAT_UNITS[statsUnits].short}`, valueFont),
           ...rows.map(r => measure(r.text, valueFont))
         );
         const headerWidth = measure('LEADERBOARD', captionFont, true);
@@ -5435,8 +5455,8 @@
                           <span>Show leaderboard</span>
                         </label>
                         <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
-                          Ranks the tracks by distance to a finish point you place. A track that reaches the finish
-                          is locked in by its finish time.
+                          Ranks the tracks by distance to a finish point you place, showing each track's gap to the
+                          leader. A track that reaches the finish is locked in by its finish time.
                         </p>
                       </div>
 
