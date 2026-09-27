@@ -7,7 +7,23 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <!-- Position map tiles without per-tile 3D layers: the preview map is CSS-scaled
        to fit (see .map-surface), and separately composited tiles show hairline seams -->
-  <script>window.L_DISABLE_3D = true;</script>
+  <script>
+    // Diagnostic switches for the iPhone Safari shaded-box issue (v3.10.1), e.g.
+    // ?debug=notracks  or  ?debug=smooth,layers  - shown next to the version badge.
+    //   notracks - hide the track/label layers (does the box still appear?)
+    //   smooth   - undo Leaflet's Safari-only "image-rendering: -webkit-optimize-contrast" on tiles
+    //   layers   - give tiles, tracks, and labels their own compositing layers
+    //   3d       - keep Leaflet's 3D tile positioning (normally disabled, see below)
+    window.DEBUG_FLAGS = (new URLSearchParams(location.search).get('debug') || '').split(',').map(f => f.trim()).filter(Boolean);
+    if (!window.DEBUG_FLAGS.includes('3d')) window.L_DISABLE_3D = true;
+    (function () {
+      var css = [];
+      if (window.DEBUG_FLAGS.includes('notracks')) css.push('.leaflet-overlay-pane, .leaflet-marker-pane { display: none !important; }');
+      if (window.DEBUG_FLAGS.includes('smooth')) css.push('.leaflet-container .leaflet-tile { image-rendering: auto !important; }');
+      if (window.DEBUG_FLAGS.includes('layers')) css.push('.leaflet-tile-pane, .leaflet-overlay-pane, .leaflet-marker-pane { will-change: transform; }');
+      if (css.length) document.head.appendChild(Object.assign(document.createElement('style'), { textContent: css.join('\n') }));
+    })();
+  </script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -1220,6 +1236,8 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.10.1 - Diagnostic ?debug= switches (notracks, smooth, layers, 3d) to bisect the iPhone Safari shaded box on a
+    //          real device; active switches are shown next to the version badge. No behavior change without ?debug=.
     // 3.10.0 - Track layers are now drawn with Leaflet's SVG renderer instead of canvas. A phone screenshot showed the
     //          iPhone artifact is a darker box exactly covering the bounding box of the travelled tracks (rest of the
     //          map washed out) - WebKit's canvas compositing of the semi-transparent strokes; the 3.9.1 full-repaint
@@ -1353,7 +1371,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.10.0";
+    const APP_VERSION = "3.10.1";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -4425,7 +4443,7 @@
               <p>Upload your GPX files and create animated track videos</p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center' }}>
-              <div className="version">v{APP_VERSION}</div>
+              <div className="version">v{APP_VERSION}{window.DEBUG_FLAGS.length > 0 ? ` \u00b7 debug: ${window.DEBUG_FLAGS.join('+')}` : ''}</div>
               <button className="help-btn" onClick={toggleHelpModal}>
                 ❓ Help
               </button>

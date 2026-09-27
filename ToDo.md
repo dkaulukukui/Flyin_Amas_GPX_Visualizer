@@ -1,5 +1,12 @@
 To Do List:
 
+## In progress (v3.10.1)
+
+- iPhone Safari shaded box still present with SVG track layers (so not the track renderer). Current
+  theory: with Leaflet 3D disabled (v3.2) tiles and tracks share one painted layer, and Safari re-renders
+  the tiles under the changing tracks' bounding box differently. Diagnostic `?debug=` switches deployed to
+  bisect on the phone: `notracks`, `smooth`, `layers`, `3d` (combinable, shown next to the version badge).
+
 ## Done in v3.10.0
 
 - The "lighter band" on mobile: a phone screenshot showed a darker box exactly covering the bounding box

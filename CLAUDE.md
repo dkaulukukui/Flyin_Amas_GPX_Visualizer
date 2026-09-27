@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 3.10.0 (as of last update)
+   - Current version: 3.10.1 (as of last update)
 
 ### Key Technical Patterns
 
@@ -456,7 +456,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 3.10.0**
+**Current Version: 3.10.1**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -489,7 +489,8 @@ No build process required - single HTML file is the entire app.
 - **v3.8.0**: Esri Clarity imagery by default (clearer water), Map Imagery choice
 - **v3.9.0**: Tile prefetch along the follow camera's path (preview + export)
 - **v3.9.1**: Track canvas always repaints in full at 1x (did not fix the iPhone artifact)
-- **v3.10.0**: Track layers drawn with the SVG renderer (fixes the box-shaped shading artifact on iPhone Safari)
+- **v3.10.0**: Track layers drawn with the SVG renderer (did not fix the iPhone artifact)
+- **v3.10.1**: `?debug=` diagnostic switches (notracks, smooth, layers, 3d) — see the inline script in `<head>`
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which
