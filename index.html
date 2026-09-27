@@ -7,21 +7,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <!-- Position map tiles without per-tile 3D layers: the preview map is CSS-scaled
        to fit (see .map-surface), and separately composited tiles show hairline seams -->
-  <script>
-    window.L_DISABLE_3D = true;
-    // Diagnostic switches for iPhone Safari rendering (v3.11.1), e.g. ?debug=overlay
-    // - shown next to the version badge. Remove once the iPhone rendering is confirmed.
-    //   overlay - also give the track (overlay) pane its own layer (v3.11.0 behavior)
-    //   markers - also give the label (marker) pane its own layer
-    //   canvas  - draw track layers on a canvas instead of SVG
-    window.DEBUG_FLAGS = (new URLSearchParams(location.search).get('debug') || '').split(',').map(f => f.trim()).filter(Boolean);
-    (function () {
-      var css = [];
-      if (window.DEBUG_FLAGS.includes('overlay')) css.push('.leaflet-overlay-pane { will-change: transform; }');
-      if (window.DEBUG_FLAGS.includes('markers')) css.push('.leaflet-marker-pane { will-change: transform; }');
-      if (css.length) document.head.appendChild(Object.assign(document.createElement('style'), { textContent: css.join('\n') }));
-    })();
-  </script>
+  <script>window.L_DISABLE_3D = true;</script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -205,7 +191,8 @@
        differently from the rest - a shaded box that followed the boat
        (confirmed on a real iPhone, v3.10.1). Only the tile pane: also
        promoting the track (overlay) pane left stale, torn copies of the lines
-       on iPhone as the camera moved (v3.11.0). */
+       on iPhone as the camera moved (v3.11.0). Tracks use the canvas renderer
+       (SVG lines also tore on iPhone; confirmed v3.11.1). */
     .leaflet-tile-pane {
       will-change: transform;
     }
@@ -1245,6 +1232,9 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.12.0 - iPhone Safari rendering settled (confirmed on the phone with the 3.11.1 switches): track layers use
+    //          Leaflet's canvas renderer again (SVG lines left torn copies ahead of the boats), and only the tile pane
+    //          has its own compositing layer (fixes the shaded box). Diagnostic ?debug= switches removed.
     // 3.11.1 - Only the tile pane gets its own compositing layer: also promoting the track (overlay) pane left torn,
     //          stale copies of the track lines ahead of the boats on iPhone as the camera moved. The tile layer alone
     //          is what removes the shaded box. Diagnostic ?debug= switches (overlay, markers, canvas) included to
@@ -1389,7 +1379,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.11.1";
+    const APP_VERSION = "3.12.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -2085,12 +2075,12 @@
       useEffect(() => {
         // Initialize map
         if (!mapInstanceRef.current) {
-          // Track layers are drawn as SVG (faster than canvas here in phone
-          // emulation). Exports don't use these layers (drawTracksDirect draws
-          // the tracks into the video).
-          const map = L.map('map', {
-            renderer: window.DEBUG_FLAGS.includes('canvas') ? L.canvas() : L.svg()
-          }).setView(INITIAL_MAP_CENTER, INITIAL_MAP_ZOOM);
+          // Track layers are drawn on a canvas. On iPhone Safari, SVG track lines
+          // left torn/stale copies ahead of the boats as the camera moved; the
+          // canvas renderer (with the tile pane on its own layer, see CSS) was
+          // confirmed clean on the phone (v3.11.1 ?debug=canvas). Exports don't
+          // use these layers (drawTracksDirect draws the tracks into the video).
+          const map = L.map('map', { renderer: L.canvas() }).setView(INITIAL_MAP_CENTER, INITIAL_MAP_ZOOM);
           // Lower-right corner belongs to the watermark
           map.attributionControl.setPosition('topright');
 
@@ -4450,7 +4440,7 @@
               <p>Upload your GPX files and create animated track videos</p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center' }}>
-              <div className="version">v{APP_VERSION}{window.DEBUG_FLAGS.length > 0 ? ` \u00b7 debug: ${window.DEBUG_FLAGS.join('+')}` : ''}</div>
+              <div className="version">v{APP_VERSION}</div>
               <button className="help-btn" onClick={toggleHelpModal}>
                 ❓ Help
               </button>

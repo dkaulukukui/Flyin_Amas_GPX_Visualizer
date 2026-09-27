@@ -1,10 +1,10 @@
 To Do List:
 
-## In progress (v3.11.1)
+## Done in v3.12.0
 
-- v3.11.0 removed the box but promoting the track (overlay) pane caused torn/stale copies of the track
-  lines ahead of the boats on iPhone. v3.11.1 promotes only the tile pane. Switches to confirm on the phone:
-  `?debug=overlay` (v3.11.0 behavior), `?debug=markers`, `?debug=canvas`.
+- iPhone Safari rendering confirmed clean on the phone: tile pane on its own compositing layer (no shaded
+  box) + track layers on Leaflet's canvas renderer (SVG lines tore ahead of the boats). Found by on-device
+  switches in v3.10.1/v3.11.1; switches removed.
 
 ## Done in v3.11.0
 
