@@ -17,8 +17,10 @@ Thumbs.db
 
 # GPX files (user data - don't commit)
 *.gpx
-# ...except the bundled example tracks
+# ...except the bundled example tracks and race files meant to be shared by link
+# (host them in races/ and open with ?gpx=races/... or ?project=races/...)
 !examples/*.gpx
+!races/**/*.gpx
 .claude
 
 # Video exports

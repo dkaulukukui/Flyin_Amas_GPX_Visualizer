@@ -58,6 +58,32 @@ A beautiful, interactive web application for visualizing and animating GPS track
 - ⚙️ **Customizable Settings**: Control duration (5-300s), FPS (15-60), quality, and resolution
 - 📱 **iOS Detection**: Graceful handling with screen recording instructions
 
+## Projects, Presets & Links
+
+**Save a project** (Tracks tab → *Save project*): downloads one `.json` file with the tracks (their GPS
+points, labels, colors, and trims), every setting (export format, camera, overlays, stats, watermark), and
+the video's title, stats start point, and comparison point. Open it with *Open*, or drop it on the upload
+zone, to reproduce the exact same video — on any computer.
+
+**Save a preset**: uncheck *Include tracks* before saving. A preset holds only the settings — open it to
+apply your standard look (e.g. 9:16 for Instagram with your scoreboard and watermark) to whatever tracks
+are loaded.
+
+**Open from a link**: add parameters to the page address and the files load automatically:
+
+```
+https://dkaulukukui.github.io/Flyin_Amas_GPX_Visualizer/?project=races/xmas-2025/race.json
+https://dkaulukukui.github.io/Flyin_Amas_GPX_Visualizer/?gpx=races/xmas-2025/Kai.gpx&label=Kai&color=22c55e&gpx=races/xmas-2025/Kimo.gpx&title=Xmas%20Race
+```
+
+- `?project=` — a saved project or preset
+- `?gpx=` — a GPX file (repeat for more); an optional `&label=` and `&color=` (hex, without `#`) apply to the `gpx` before them
+- `&title=` — the video title
+
+Files must be on this site (e.g. committed to a `races/` folder in the repo — `.gitignore` allows
+`races/**/*.gpx`) or on a server that allows cross-site downloads (CORS), such as raw.githubusercontent.com.
+Browsers can't open files from your computer by path — use *Open* or drag and drop for those.
+
 ## Features
 
 - **📁 Upload Multiple GPX Files** - Drag and drop or browse to add tracks
@@ -80,6 +106,7 @@ A beautiful, interactive web application for visualizing and animating GPS track
 - **⏱️ Duration Control** - Set the animation/video length directly (5-300 seconds)
 - **✂️ Track Trimming** - Cut unwanted points from the start or end of any track (reversible)
 - **〰️ Smooth Motion** - Track heads glide between GPS points, and optional Track Smoothing (Off/Light/Medium/Strong) removes GPS jitter
+- **💾 Projects, Presets & Links** - Save tracks + all settings to one project file to reproduce a video exactly, save settings-only presets, or auto-load tracks/projects from a link
 - **🗂️ Tabbed Settings** - Tracks / Camera / Overlays / Export tabs, playback controls under the preview, and your settings remembered between visits
 - **📊 Scoreboard & Stats** - Race timer, speed, distance, heart rate, stroke rate, and the gap between two tracks, in one on-video scoreboard (Imperial or Metric), with an adjustable start point
 - **💧 Watermark** - "Made at Flyinamas.com" in the lower-right corner by default; change the text, size, and opacity, or turn it off

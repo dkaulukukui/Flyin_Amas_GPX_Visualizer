@@ -1,5 +1,10 @@
 To Do List:
 
+## Done in v3.6.0
+
+- Load tracks when the page opens and save/load export settings, combined: project files (tracks + all
+  settings, reproduce a video exactly), settings-only presets, and `?project=` / `?gpx=` startup links.
+
 ## Done in v3.5.0
 
 - ~~consider a different settings layout for better usability~~ — Done. Sidebar split into Tracks / Camera /
@@ -65,3 +70,5 @@ To Do List:
 ## Remaining
 
 (nothing queued — add new ideas here)
+- make the zoom controls on the map adjust the camera zoom setting as well
+- investigate issue where when zoomed in suring playback the map goes all white or white washed like the map tile doesnt have time to load properly.

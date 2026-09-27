@@ -1217,6 +1217,13 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.6.0 - Projects, presets & links: "Save project" (Tracks tab) downloads one .json with the tracks (embedded
+    //         points, labels, colors, trims), every setting, and per-video state (title, stats start, gap/centered
+    //         tracks, alignment) - opening it (button or drop on the upload zone) reproduces the exact video. Without
+    //         tracks it is a settings-only preset applied to the loaded tracks. Page URL parameters load on startup:
+    //         ?project=URL, ?gpx=URL[&label=..][&color=..] (repeatable), &title=.. - failures are reported in one
+    //         alert; examples are skipped when links are given. Shared helpers: createTrack, addLoadedTracks,
+    //         fetchText/fetchGpxTrack, coerceSetting, downloadBlob. .gitignore allows races/**/*.gpx for hosting.
     // 3.5.0 - Settings layout overhaul: the 4,100px scrolling sidebar is now four tabs - Tracks (upload, track list,
     //         animation style, compare, smoothing, totals), Camera (zoom/follow), Overlays (title, scoreboard & stats,
     //         track labels, watermark), Export (format settings) - with the Export Video button pinned at the bottom.
@@ -1314,7 +1321,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.5.0";
+    const APP_VERSION = "3.6.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -1559,17 +1566,62 @@
       }
     })();
 
+    // Validate a remembered/imported setting against its default: a missing or
+    // wrong-typed value gives the default; objects are merged over the default
+    // (so settings added in later versions get their defaults)
+    function coerceSetting(value, defaultValue) {
+      if (value === undefined || value === null || typeof value !== typeof defaultValue) return defaultValue;
+      if (typeof defaultValue === 'object') return { ...defaultValue, ...value };
+      return value;
+    }
+
+    // '#22c55e', '22c55e', or '#2c5' -> '#22c55e'; anything else -> null
+    const normalizeHexColor = (value) => {
+      if (typeof value !== 'string') return null;
+      const match = value.trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i);
+      if (!match) return null;
+      const hex = match[1].length === 3 ? match[1].split('').map(c => c + c).join('') : match[1];
+      return `#${hex.toLowerCase()}`;
+    };
+
+    // Project / preset files (v3.6.0): settings + (for projects) embedded tracks
+    // and per-video state, so one file reproduces a playback. See buildProject.
+    const PROJECT_FORMAT = 'flyinamas-gpx-project';
+    const PROJECT_VERSION = 1;
+    const MAX_PROJECT_FILE_SIZE = 200 * 1024 * 1024;
+
+    // What to open on page load, from the page URL:
+    //   ?project=URL                        a saved project or preset (.json)
+    //   ?gpx=URL[&label=..][&color=..]      repeatable; label/color apply to the preceding gpx
+    //   &title=..                           video title
+    function parseStartupLinks(search) {
+      const links = { project: null, gpx: [], title: null };
+      for (const [key, rawValue] of new URLSearchParams(search)) {
+        const value = rawValue.trim();
+        const last = links.gpx[links.gpx.length - 1];
+        if (!value) continue;
+        if (key === 'project') {
+          links.project = value;
+        } else if (key === 'gpx') {
+          links.gpx.push({ url: value });
+        } else if (key === 'label' && last) {
+          last.label = value.slice(0, 100);
+        } else if (key === 'color' && last) {
+          const color = normalizeHexColor(value);
+          if (color) last.color = color;
+        } else if (key === 'title') {
+          links.title = value.slice(0, 200);
+        }
+      }
+      return links;
+    }
+
     // useState that starts from the remembered value. `registry` (a ref) collects
     // each setting's current value, setter, and default so they can be saved
     // and reset together. A saved value of the wrong type is ignored; saved
     // objects are merged over the default (new keys get their defaults).
     function usePersistentState(registry, key, defaultValue) {
-      const [value, setValue] = useState(() => {
-        const saved = savedSettings[key];
-        if (saved === undefined || saved === null || typeof saved !== typeof defaultValue) return defaultValue;
-        if (typeof defaultValue === 'object') return { ...defaultValue, ...saved };
-        return saved;
-      });
+      const [value, setValue] = useState(() => coerceSetting(savedSettings[key], defaultValue));
       registry.current[key] = { value, setValue, defaultValue };
       return [value, setValue];
     }
@@ -1690,6 +1742,181 @@
         });
         setStatsStartProgress(0);
         setStatsGapIds([null, null]);
+      };
+
+      // ---- Projects & presets ----
+
+      const getSettingsSnapshot = () => {
+        const settings = {};
+        Object.entries(settingsRegistry.current).forEach(([key, entry]) => {
+          if (key !== 'activeTab') settings[key] = entry.value;
+        });
+        return settings;
+      };
+
+      // Apply the settings present in `settings` (validated); others keep their values
+      const applySettings = (settings) => {
+        if (!settings || typeof settings !== 'object') return;
+        Object.entries(settingsRegistry.current).forEach(([key, entry]) => {
+          if (key === 'activeTab' || !(key in settings)) return;
+          entry.setValue(coerceSetting(settings[key], entry.defaultValue));
+        });
+      };
+
+      // A project: settings + per-video state + tracks (raw points stored column
+      // by column, trims kept separately). Without tracks it's a settings preset.
+      const buildProject = (includeTracks) => {
+        const project = {
+          format: PROJECT_FORMAT,
+          version: PROJECT_VERSION,
+          appVersion: APP_VERSION,
+          savedAt: new Date().toISOString(),
+          settings: getSettingsSnapshot()
+        };
+        if (!includeTracks || tracks.length === 0) return project;
+
+        const indexOfTrack = (id) => {
+          if (id === null || id === undefined) return null;
+          const index = tracks.findIndex(t => t.id == id); // == handles string ids from <select>
+          return index >= 0 ? index : null;
+        };
+        project.video = {
+          title: videoTitle,
+          statsStartProgress,
+          gapTracks: statsGapIds.map(indexOfTrack),
+          centeredTrack: indexOfTrack(centeredTrackId),
+          alignment: alignPoint
+            ? { point: { lat: alignPoint.lat, lng: alignPoint.lng }, active: alignmentActive }
+            : null
+        };
+        project.tracks = tracks.map(track => {
+          const pts = track.points;
+          const columns = {
+            lat: pts.map(p => p.lat),
+            lon: pts.map(p => p.lon),
+            time: pts.map(p => {
+              const ms = p.time ? Date.parse(p.time) : NaN;
+              return Number.isFinite(ms) ? ms : null;
+            })
+          };
+          Object.keys(GPX_EXTENSION_FIELDS).forEach(key => {
+            if (pts.some(p => p[key] !== undefined)) columns[key] = pts.map(p => (p[key] !== undefined ? p[key] : null));
+          });
+          return {
+            name: track.name,
+            label: track.label,
+            color: track.color,
+            trimStart: track.trimStart ?? 0,
+            trimEnd: track.trimEnd ?? pts.length - 1,
+            points: columns
+          };
+        });
+        return project;
+      };
+
+      // Rebuild validated tracks from a project (throws with a readable reason)
+      const tracksFromProject = (projectTracks) => projectTracks.map((saved, i) => {
+        const cols = saved && saved.points;
+        if (!cols || !Array.isArray(cols.lat) || !Array.isArray(cols.lon) || cols.lat.length !== cols.lon.length) {
+          throw new Error(`track ${i + 1} has no valid points`);
+        }
+        const points = [];
+        for (let j = 0; j < cols.lat.length; j++) {
+          const lat = cols.lat[j];
+          const lon = cols.lon[j];
+          if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
+          const ms = Array.isArray(cols.time) ? cols.time[j] : null;
+          const point = { lat, lon, time: Number.isFinite(ms) ? new Date(ms).toISOString() : undefined };
+          Object.keys(GPX_EXTENSION_FIELDS).forEach(key => {
+            const v = Array.isArray(cols[key]) ? cols[key][j] : null;
+            if (Number.isFinite(v)) point[key] = v;
+          });
+          points.push(point);
+        }
+        if (points.length === 0) throw new Error(`track ${i + 1} has no valid points`);
+
+        const track = createTrack(points, typeof saved.name === 'string' ? saved.name : `Track ${i + 1}.gpx`);
+        if (typeof saved.label === 'string') track.label = saved.label.slice(0, 100);
+        const color = normalizeHexColor(saved.color);
+        if (color) track.color = color;
+        const lastIdx = points.length - 1;
+        const trimStart = Number.isInteger(saved.trimStart) ? Math.min(Math.max(saved.trimStart, 0), lastIdx) : 0;
+        const trimEnd = Number.isInteger(saved.trimEnd) ? Math.min(Math.max(saved.trimEnd, trimStart), lastIdx) : lastIdx;
+        if (trimStart > 0 || trimEnd < lastIdx) {
+          track.trimStart = trimStart;
+          track.trimEnd = trimEnd;
+        }
+        return track;
+      });
+
+      // Open a project (replaces tracks, settings, and per-video state) or a
+      // preset (settings only). Throws with a readable reason if invalid;
+      // returns false if the user cancels replacing their tracks.
+      const applyProject = (project, { confirmReplace = true } = {}) => {
+        if (!project || project.format !== PROJECT_FORMAT) {
+          throw new Error("isn't a FlyinAmas project or preset file");
+        }
+        if (!(project.version <= PROJECT_VERSION)) {
+          throw new Error('was saved by a newer version of this app - reload the page to update');
+        }
+        const hasTracks = Array.isArray(project.tracks) && project.tracks.length > 0;
+        const newTracks = hasTracks ? tracksFromProject(project.tracks) : null; // validate before changing anything
+
+        if (hasTracks && confirmReplace) {
+          const ownTracks = tracks.filter(t => !t.isExample).length;
+          if (ownTracks > 0 && !window.confirm(`Open this project? It replaces the ${ownTracks} track(s) currently loaded.`)) {
+            return false;
+          }
+        }
+
+        applySettings(project.settings);
+        if (!hasTracks) return true; // preset: settings only
+
+        const video = project.video && typeof project.video === 'object' ? project.video : {};
+        const idAt = (index) => (Number.isInteger(index) && newTracks[index] ? newTracks[index].id : null);
+        setIsPlaying(false);
+        setProgress(0);
+        setTrimOpenId(null);
+        setTracks(newTracks);
+        setVideoTitle(typeof video.title === 'string' ? video.title.slice(0, 200) : '');
+        setStatsStartProgress(Number.isFinite(video.statsStartProgress) ? Math.min(100, Math.max(0, video.statsStartProgress)) : 0);
+        setStatsGapIds(Array.isArray(video.gapTracks) ? [idAt(video.gapTracks[0]), idAt(video.gapTracks[1])] : [null, null]);
+        setCenteredTrackId(idAt(video.centeredTrack));
+        const alignment = video.alignment;
+        if (alignment && alignment.point && Number.isFinite(alignment.point.lat) && Number.isFinite(alignment.point.lng) && newTracks.length >= 2) {
+          setAlignPoint({ lat: alignment.point.lat, lng: alignment.point.lng });
+          setAlignmentActive(!!alignment.active);
+        } else {
+          setAlignPoint(null);
+          setAlignmentActive(false);
+        }
+        setIsPickingPoint(false);
+        fitMapToTracks(newTracks);
+        return true;
+      };
+
+      const openProjectFile = (file) => {
+        if (file.size > MAX_PROJECT_FILE_SIZE) {
+          alert(`"${file.name}" is too large to open.`);
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            applyProject(JSON.parse(e.target.result));
+          } catch (err) {
+            alert(`"${file.name}" couldn't be opened: ${err instanceof SyntaxError ? 'it is not a valid JSON file' : `it ${err.message}`}.`);
+          }
+        };
+        reader.readAsText(file);
+      };
+
+      const [saveIncludesTracks, setSaveIncludesTracks] = useState(true);
+      const saveProject = () => {
+        const project = buildProject(saveIncludesTracks);
+        const slug = (videoTitle || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'flyinamas';
+        const kind = project.tracks ? 'project' : 'preset';
+        downloadBlob(new Blob([JSON.stringify(project)], { type: 'application/json' }), `${slug}-${kind}.json`);
       };
 
       // Preview framing. The Leaflet map (plus legend/title) renders on a
@@ -1862,7 +2089,12 @@
           points.push(point);
         });
 
-        // Extract label from filename: use part before first underscore, or full name (minus .gpx) if no underscore
+        return createTrack(points, filename);
+      };
+
+      // Build a track object from parsed points (GPX files and project files).
+      // Label defaults to the filename part before the first underscore.
+      const createTrack = (points, filename) => {
         const baseName = filename.replace(/\.gpx$/i, '');
         const defaultLabel = baseName.includes('_') ? baseName.split('_')[0] : baseName;
         let startTime = null;
@@ -1894,9 +2126,71 @@
 
       const MAX_GPX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB cap to avoid exhausting memory
 
+      // Add loaded tracks (uploads and ?gpx= links). They replace the bundled
+      // example tracks; the video title becomes `title`, or the first track's
+      // date unless the user has typed a title of their own.
+      const addLoadedTracks = (newTracks, { title } = {}) => {
+        if (newTracks.length === 0) return;
+        setTracks(prev => {
+          const base = prev.filter(t => !t.isExample);
+          if (title) {
+            setVideoTitle(title);
+          } else if (base.length === 0 && newTracks[0].startTime && (!videoTitle || videoTitle === DEFAULT_VIDEO_TITLE)) {
+            const date = new Date(newTracks[0].startTime);
+            setVideoTitle(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+          }
+          return [...base, ...newTracks];
+        });
+        fitMapToTracks(newTracks);
+      };
+
+      const fitMapToTracks = (someTracks) => {
+        const allPoints = someTracks.flatMap(t => t.points.map(p => [p.lat, p.lon]));
+        if (allPoints.length > 0 && mapInstanceRef.current) {
+          mapInstanceRef.current.fitBounds(L.latLngBounds(allPoints), { padding: [50, 50] });
+        }
+      };
+
+      // Download text from a URL (relative to this page or absolute http/https),
+      // turning failures into readable reasons
+      const fetchText = async (url, maxBytes) => {
+        let resolved;
+        try {
+          resolved = new URL(url, window.location.href);
+        } catch (e) {
+          throw new Error('not a valid URL');
+        }
+        if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
+          throw new Error('only http(s) links are supported');
+        }
+        let resp;
+        try {
+          resp = await fetch(resolved.href);
+        } catch (e) {
+          throw new Error("couldn't be downloaded - the server may not allow cross-site downloads (CORS), or you're offline");
+        }
+        if (!resp.ok) throw new Error(`not found (HTTP ${resp.status})`);
+        const text = await resp.text();
+        if (text.length > maxBytes) throw new Error(`too large (max ${Math.round(maxBytes / 1024 / 1024)} MB)`);
+        return text;
+      };
+
+      const fetchGpxTrack = async (url) => {
+        const text = await fetchText(url, MAX_GPX_FILE_SIZE);
+        const name = decodeURIComponent(new URL(url, window.location.href).pathname.split('/').pop() || 'track.gpx');
+        const track = parseGPX(text, name);
+        if (!track || track.points.length === 0) throw new Error('not a GPX file with track points');
+        return track;
+      };
+
       const handleFileUpload = (files) => {
         Array.from(files).forEach(file => {
-          if (!file.name.toLowerCase().endsWith('.gpx')) return;
+          const lowerName = file.name.toLowerCase();
+          if (lowerName.endsWith('.json')) {
+            openProjectFile(file);
+            return;
+          }
+          if (!lowerName.endsWith('.gpx')) return;
 
           if (file.size > MAX_GPX_FILE_SIZE) {
             alert(`"${file.name}" is too large (max 50 MB).`);
@@ -1906,31 +2200,11 @@
           const reader = new FileReader();
           reader.onload = (e) => {
             const track = parseGPX(e.target.result, file.name);
-
             if (!track || track.points.length === 0) {
               alert(`"${file.name}" could not be loaded: no valid track points found.`);
               return;
             }
-
-            setTracks(prev => {
-              // The user's own uploads replace the bundled example tracks
-              const base = prev.filter(t => !t.isExample);
-
-              // Auto-populate title with date from first track (replacing the
-              // example "FlyinAmas" title, but never a title the user typed)
-              if (base.length === 0 && track.startTime && (!videoTitle || videoTitle === DEFAULT_VIDEO_TITLE)) {
-                const date = new Date(track.startTime);
-                setVideoTitle(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
-              }
-
-              return [...base, track];
-            });
-
-            // Fit map to bounds
-            const bounds = L.latLngBounds(
-              track.points.map(p => [p.lat, p.lon])
-            );
-            mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50] });
+            addLoadedTracks([track]);
           };
           reader.readAsText(file);
         });
@@ -2524,37 +2798,62 @@
         }
       }, [isPlaying, exportDuration]);
 
-      // Preload bundled example tracks so first-time visitors see the app working.
-      // They are cleared automatically as soon as the user uploads their own files.
+      // On page load: open what the URL asks for (?project= / ?gpx=, see
+      // parseStartupLinks), otherwise preload the bundled example tracks so
+      // first-time visitors see the app working. Examples are cleared as soon
+      // as the user loads their own tracks.
       useEffect(() => {
-        const exampleFiles = ['examples/Kai.gpx', 'examples/Kimo.gpx'];
         let cancelled = false;
+        const links = parseStartupLinks(window.location.search);
 
         (async () => {
+          if (links.project || links.gpx.length > 0) {
+            const failures = [];
+            if (links.project) {
+              try {
+                const project = JSON.parse(await fetchText(links.project, MAX_PROJECT_FILE_SIZE));
+                if (!cancelled) applyProject(project, { confirmReplace: false });
+              } catch (err) {
+                failures.push(`${links.project}: ${err instanceof SyntaxError ? 'not a valid JSON file' : err.message}`);
+              }
+            }
+            const results = await Promise.allSettled(links.gpx.map(entry => fetchGpxTrack(entry.url)));
+            if (cancelled) return;
+            const loaded = [];
+            results.forEach((result, i) => {
+              const entry = links.gpx[i];
+              if (result.status === 'fulfilled') {
+                const track = result.value;
+                if (entry.label) track.label = entry.label;
+                if (entry.color) track.color = entry.color;
+                loaded.push(track);
+              } else {
+                failures.push(`${entry.url}: ${result.reason.message}`);
+              }
+            });
+            addLoadedTracks(loaded, { title: links.title });
+            if (loaded.length === 0 && links.title) setVideoTitle(links.title);
+            if (failures.length > 0) {
+              alert(`Some files from the link couldn't be loaded:\n\n${failures.join('\n')}`);
+            }
+            return;
+          }
+
+          const exampleFiles = ['examples/Kai.gpx', 'examples/Kimo.gpx'];
           const loaded = [];
           for (const path of exampleFiles) {
             try {
-              const resp = await fetch(path);
-              if (!resp.ok) continue;
-              const text = await resp.text();
-              const track = parseGPX(text, path.split('/').pop());
-              if (track && track.points.length > 0) {
-                track.isExample = true;
-                loaded.push(track);
-              }
+              const track = await fetchGpxTrack(path);
+              track.isExample = true;
+              loaded.push(track);
             } catch (e) {
               // Examples unavailable (offline, file://) - just start empty
             }
           }
 
           if (cancelled || loaded.length === 0) return;
-
           setTracks(prev => (prev.length > 0 ? prev : loaded)); // never clobber user uploads
-
-          const allPoints = loaded.flatMap(t => t.points.map(p => [p.lat, p.lon]));
-          if (allPoints.length > 0 && mapInstanceRef.current) {
-            mapInstanceRef.current.fitBounds(L.latLngBounds(allPoints), { padding: [50, 50] });
-          }
+          fitMapToTracks(loaded);
         })();
 
         return () => { cancelled = true; };
@@ -3170,13 +3469,17 @@
       };
 
       // Trigger a download of the finished video blob
-      const downloadVideoBlob = (blob, fileExtension) => {
+      const downloadBlob = (blob, filename) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `gpx-animation-${Date.now()}.${fileExtension}`;
+        a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
+      };
+
+      const downloadVideoBlob = (blob, fileExtension) => {
+        downloadBlob(blob, `gpx-animation-${Date.now()}.${fileExtension}`);
       };
 
       // Reset all export-related state and release capture resources
@@ -3895,13 +4198,60 @@
                   >
                     <div className="upload-icon">📁</div>
                     <div>Drop GPX files here or click to browse</div>
+                    <div style={{ fontSize: '11px', color: '#999', marginTop: '6px' }}>A saved project or preset (.json) works too</div>
                     <input
                       id="file-input"
                       type="file"
                       className="file-input"
-                      accept=".gpx"
+                      accept=".gpx,.json"
                       multiple
-                      onChange={(e) => handleFileUpload(e.target.files)}
+                      onChange={(e) => {
+                        handleFileUpload(e.target.files);
+                        e.target.value = ''; // allow picking the same file again
+                      }}
+                    />
+                  </div>
+
+                  <div className="controls">
+                    <div className="control-label">Project</div>
+                    <div className="button-group">
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => document.getElementById('project-input').click()}
+                        disabled={isRecording}
+                      >
+                        {'\u{1F4C2}'} Open
+                      </button>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={saveProject}
+                        disabled={isRecording}
+                      >
+                        {'\u{1F4BE}'} {saveIncludesTracks && tracks.length > 0 ? 'Save project' : 'Save preset'}
+                      </button>
+                    </div>
+                    <label className="checkbox-group" style={{ marginTop: '8px' }}>
+                      <input
+                        type="checkbox"
+                        className="checkbox"
+                        checked={saveIncludesTracks}
+                        onChange={(e) => setSaveIncludesTracks(e.target.checked)}
+                      />
+                      <span>Include tracks</span>
+                    </label>
+                    <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
+                      A project saves the tracks and every setting, so opening it reproduces this exact video.
+                      Without tracks it's a preset: opening it applies the look (format, overlays, camera) to the loaded tracks.
+                    </p>
+                    <input
+                      id="project-input"
+                      type="file"
+                      className="file-input"
+                      accept=".json,application/json"
+                      onChange={(e) => {
+                        if (e.target.files[0]) openProjectFile(e.target.files[0]);
+                        e.target.value = '';
+                      }}
                     />
                   </div>
 
@@ -4933,6 +5283,8 @@
                       <li><strong>Compare tracks (optional):</strong> With 2+ tracks loaded, use "🏁 Compare Tracks" in the Tracks tab to pick a common point on the map, adjust the radius circle, and align tracks from different days to race from that point</li>
                       <li><strong>Export video:</strong> Pick the format in the Export tab (aspect ratio, resolution, quality, FPS) and click "Export Video" at the bottom of the sidebar</li>
                       <li><strong>Download:</strong> Wait for the export to complete, then download your animated video</li>
+                      <li><strong>Save a project (optional):</strong> In the Tracks tab, "Save project" stores the tracks and every setting in one .json file - open it later (or drop it on the upload zone) to reproduce the exact same video. Uncheck "Include tracks" to save a settings-only preset (e.g. your standard Instagram look) that you can apply to any tracks</li>
+                      <li><strong>Open from a link:</strong> Add <code>?project=URL</code> (a saved project or preset) or <code>?gpx=URL&amp;label=Name&amp;color=ff0000</code> (repeatable) and <code>&amp;title=...</code> to this page's address to load them automatically. Files must be on this site or on a server that allows cross-site downloads</li>
                     </ol>
                     <p>
                       <strong>Note for iOS/Android users:</strong> Video export works on iOS 16.4+ and modern Android browsers

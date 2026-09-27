@@ -28,12 +28,13 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 3.5.0 (as of last update)
+   - Current version: 3.6.0 (as of last update)
 
 ### Key Technical Patterns
 
 #### GPX File Processing
-- Files uploaded via drag-and-drop or file input (50 MB size cap per file)
+- Files uploaded via drag-and-drop or file input (50 MB size cap per file); `.json` files are opened as
+  projects/presets; tracks can also load from startup links (see Projects, Presets & Startup Links)
 - XML parsing via DOMParser; malformed XML is rejected (`parsererror` check)
 - Extracts `<trkpt>` elements with `lat`, `lon`, optional `time` attributes
 - Points with missing/non-numeric/out-of-range coordinates are skipped; invalid timestamps are ignored
@@ -201,6 +202,23 @@ If neither path is available (very old iOS), an alert with screen-recording inst
 - **iOS 16.4+ / modern Android**: WebCodecs MP4 export (the old hard iOS block was removed)
 - **Older browsers**: MediaRecorder WebM fallback
 - **Very old iOS**: alert with screen-recording instructions
+
+#### Projects, Presets & Startup Links (v3.6.0)
+- **Project file** (`buildProject` / `applyProject`): `{format: 'flyinamas-gpx-project', version: 1,
+  appVersion, savedAt, settings, video?, tracks?}`. `settings` = every `usePersistentState` value except
+  `activeTab` (**new preferences are included automatically**). `video` = title, `statsStartProgress`,
+  `gapTracks`/`centeredTrack` (indices into `tracks`), `alignment {point, active}`. `tracks[]` = name, label,
+  color, trimStart/trimEnd, and raw points stored column-wise (`lat`, `lon`, `time` ms|null, plus
+  `GPX_EXTENSION_FIELDS` keys when present). No `tracks` → a **preset**: `applyProject` applies settings only
+- `applyProject` validates everything first (format/version, points, hex colors, clamped trims; settings via
+  `coerceSetting`), confirms before replacing the user's own tracks, then replaces tracks + settings + video
+  state. Bump `PROJECT_VERSION` only for incompatible format changes
+- **Startup links** (`parseStartupLinks`, in the mount effect): `?project=URL`, `?gpx=URL[&label=][&color=]`
+  (repeatable; label/color apply to the preceding gpx), `&title=`. Project first, then gpx (parallel,
+  URL order), then title; one alert lists failures; examples are skipped when any link is given
+- Shared helpers: `createTrack(points, name)` (used by `parseGPX` and projects), `addLoadedTracks(tracks,
+  {title})` (uploads + links: replace examples, auto-title), `fetchText`/`fetchGpxTrack` (http(s) only,
+  readable errors incl. CORS), `downloadBlob`
 
 #### UI Layout (v3.5.0)
 - **Sidebar** (`.sidebar`, flex column): `.sidebar-tabs` (from `SIDEBAR_TABS`; `activeTab` state) →
@@ -413,7 +431,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 3.5.0**
+**Current Version: 3.6.0**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -441,6 +459,7 @@ No build process required - single HTML file is the entire app.
 - **v3.3.0**: "FlyinAmas" default title; lower-right watermark (text/size/opacity); larger default text sizes
 - **v3.4.0**: Scoreboard & stats (timer, speed, distance, HR, stroke rate, gap) with a stats registry
 - **v3.5.0**: Tabbed sidebar (Tracks/Camera/Overlays/Export), transport bar under the preview, remembered settings
+- **v3.6.0**: Project files (tracks + settings), settings presets, ?project= / ?gpx= startup links
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which
