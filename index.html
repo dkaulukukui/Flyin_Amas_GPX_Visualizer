@@ -1232,6 +1232,10 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.16.1 - Export fix: tiles that fail to load (blocked by a browser extension, missing on the server) no longer
+    //          stall the export - waitForTilesToLoad treated them as still loading, so every frame with one in view
+    //          waited the full 2 s timeout (exports crawled from that point on). A Clarity tile that fails is retried
+    //          once from the standard Esri imagery, so the map and video don't get holes. Leaderboard default size 23.
     // 3.16.0 - Leaderboard: the example tracks come with a default finish point (and the leaderboard defaults to the
     //          bottom-right), dropped on the first upload unless moved - like the default title. Trend arrows flipped:
     //          green up = catching up, red down = falling behind. Position changes animate: rows slide past each other
@@ -1398,7 +1402,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.16.0";
+    const APP_VERSION = "3.16.1";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -1868,7 +1872,7 @@
       const [scoreboardFont, setScoreboardFont] = usePersistentState(settingsRegistry, 'scoreboardFont', LEGEND_FONT);
       const [showLeaderboard, setShowLeaderboard] = usePersistentState(settingsRegistry, 'showLeaderboard', true);
       const [leaderboardPosition, setLeaderboardPosition] = usePersistentState(settingsRegistry, 'leaderboardPosition', 'bottom-right');
-      const [leaderboardSize, setLeaderboardSize] = usePersistentState(settingsRegistry, 'leaderboardSize', 15); // reference px
+      const [leaderboardSize, setLeaderboardSize] = usePersistentState(settingsRegistry, 'leaderboardSize', 23); // reference px
       const [leaderboardFont, setLeaderboardFont] = usePersistentState(settingsRegistry, 'leaderboardFont', LEGEND_FONT);
       const [finishRadius, setFinishRadius] = usePersistentState(settingsRegistry, 'finishRadius', DEFAULT_FINISH_RADIUS); // meters
       const [showFinishFlag, setShowFinishFlag] = usePersistentState(settingsRegistry, 'showFinishFlag', true);
@@ -2221,7 +2225,15 @@
               maxZoom: 20, // high-res exports zoom past native levels; upscale the last one
               crossOrigin: 'anonymous'
             });
-            layer.on('tileerror', () => {
+            layer.on('tileerror', (e) => {
+              // Fall back to the standard imagery for a tile the selected source
+              // couldn't provide (not covered, blocked by an extension, ...) so the
+              // map and video don't get holes; only one retry per tile
+              if (key !== 'standard' && e.tile && !e.tile.dataset.fallback) {
+                e.tile.dataset.fallback = '1';
+                e.tile.src = L.Util.template(MAP_IMAGERY.standard.url, { x: e.coords.x, y: e.coords.y, z: e.coords.z });
+                return;
+              }
               console.warn(`${source.label}: tile failed to load, this may affect video export`);
             });
             map._imageryLayers[key] = layer;
@@ -3877,9 +3889,15 @@
       const originalMapSizeRef = useRef(null);
 
       // Helper function to wait for tiles to load
+      // Wait until the tile images in view have finished loading. A tile that
+      // FAILED (blocked by a browser extension, missing on the server, network
+      // error) is complete with naturalWidth 0 - it counts as finished: waiting
+      // for it used to burn the full timeout on every frame it was in view,
+      // making exports crawl from that point on (v3.16.1).
+      const isTileStillLoading = (img) => !img.complete;
       const waitForTilesToLoad = async (mapContainer, maxWaitTime = 500) => {
         const tileImages = Array.from(mapContainer.querySelectorAll('.leaflet-tile-pane img'));
-        const loadingTiles = tileImages.filter(img => !img.complete || img.naturalWidth === 0);
+        const loadingTiles = tileImages.filter(isTileStillLoading);
 
         // If all tiles already loaded, just wait briefly for render settle
         if (loadingTiles.length === 0) {
@@ -3891,7 +3909,7 @@
         const startTime = Date.now();
         while (Date.now() - startTime < maxWaitTime) {
           const currentTileImages = Array.from(mapContainer.querySelectorAll('.leaflet-tile-pane img'));
-          const currentLoadingTiles = currentTileImages.filter(img => !img.complete || img.naturalWidth === 0);
+          const currentLoadingTiles = currentTileImages.filter(isTileStillLoading);
 
           if (currentLoadingTiles.length === 0) {
             // All tiles loaded, wait briefly for rendering to settle

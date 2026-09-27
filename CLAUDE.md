@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 3.16.0 (as of last update)
+   - Current version: 3.16.1 (as of last update)
 
 ### Key Technical Patterns
 
@@ -88,7 +88,8 @@ The entire application is contained in `index.html` with this organization:
 - **Satellite tiles** (`MAP_IMAGERY`, `mapImagery` setting, Camera tab): Esri **Clarity** (default, native to
   z19) or standard Esri World Imagery (native to z18), both with `crossOrigin: 'anonymous'` for CORS. Layers
   live in `map._imageryLayers`; an effect shows the selected one. Clarity tiles load through two HTTP
-  redirects (slower first load); both services send `Cache-Control: max-age=86400`
+  redirects (slower first load); both services send `Cache-Control: max-age=86400`. A Clarity tile that
+  fails (`tileerror`) is retried once from the standard imagery (`dataset.fallback`), so no holes
 - **Tile prefetch (v3.9.0)**: Leaflet only requests on-screen tiles, so a moving follow camera shows its
   leading edge still loading (a visible band on mobile). `prefetchFollowTiles(fromProgress, zoom, w, h)`
   samples `getFollowCenter` over the next `PREFETCH_LOOKAHEAD_SECONDS` of video, computes the tile URLs
@@ -208,7 +209,7 @@ Interpolation only happens between adjacent timed fixes; uses precomputed `track
 - Example race: `EXAMPLE_FINISH_POINT` is set when the bundled examples load and cleared on the first
   upload unless the user moved it (`isExampleFinish`), mirroring `DEFAULT_VIDEO_TITLE`
 - Settings (remembered + in projects): `showLeaderboard`, `leaderboardPosition` (default bottom-right),
-  `leaderboardSize`, `leaderboardFont`, `finishRadius` (default 30 m), `showFinishFlag`
+  `leaderboardSize` (default 23), `leaderboardFont`, `finishRadius` (default 30 m), `showFinishFlag`
 
 **Visual Elements**:
 - Full track preview (dimmed, togglable): Shows complete path at 30% opacity
@@ -405,7 +406,9 @@ Zoom level semantics (v3.2.0): the Zoom slider value is the zoom of the 1920px r
 the preview and all export resolutions show that same area.
 
 Hardcoded timing values:
-- Tile wait per frame: one animation frame, then poll until all tiles have loaded (max 2000ms) — no fixed pause (v3.13.1)
+- Tile wait per frame: one animation frame, then poll until all tiles have loaded (max 2000ms) — no fixed pause (v3.13.1).
+  A tile that *failed* (`complete` with `naturalWidth` 0) counts as done (`isTileStillLoading`, v3.16.1) — treating it
+  as loading made every frame with it in view wait the full 2 s
 - WebCodecs frame timestamps: `frame * round(1e6 / targetFPS)` microseconds
 - Keyframe interval (WebCodecs): every 2 seconds (`targetFPS * 2` frames)
 
@@ -491,7 +494,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 3.16.0**
+**Current Version: 3.16.1**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -534,6 +537,7 @@ No build process required - single HTML file is the entire app.
 - **v3.14.0**: Leaderboard shows gap to the leader instead of distance to the finish
 - **v3.15.0**: Leaderboard gap trend arrows (1-3 chevrons by rate)
 - **v3.16.0**: Default example finish point; arrows flipped (green up = catching up); animated position changes
+- **v3.16.1**: Failed tiles no longer stall exports; Clarity tiles fall back to standard imagery; leaderboard size 23
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which

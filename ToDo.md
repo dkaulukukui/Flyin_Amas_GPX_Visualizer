@@ -1,5 +1,13 @@
 To Do List:
 
+## Done in v3.16.1
+
+- Desktop export slowed dramatically partway through (~41%): tiles that fail to load (e.g. blocked by a
+  browser extension, or missing on the server) were treated as still loading, so every frame with one in
+  view waited the full 2 s timeout. Failed tiles now count as done (simulated: 315 s -> 16 s), and a
+  failed Clarity tile is retried from the standard imagery so the video has no holes. Leaderboard default
+  size 23.
+
 ## Done in v3.16.0
 
 - Leaderboard on by default for the example tracks (finish point + bottom-right position from the user's
