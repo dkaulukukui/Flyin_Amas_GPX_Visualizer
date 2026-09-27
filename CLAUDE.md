@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 3.1.0 (as of last update)
+   - Current version: 3.2.0 (as of last update)
 
 ### Key Technical Patterns
 
@@ -54,6 +54,26 @@ The entire application is contained in `index.html` with this organization:
 
 #### Map Rendering (Leaflet Integration)
 - Map initialized with `preferCanvas: true` for better video export
+- `window.L_DISABLE_3D = true` is set before Leaflet loads (tiles positioned with left/top, not
+  per-tile 3D layers) — required for seam-free CSS scaling of the preview; it also forces
+  whole-number zoom (Leaflet ignores `zoomSnap` without 3D), which the design relies on
+
+#### Frame Scaling / WYSIWYG Preview (v3.2.0)
+- **Reference frame**: every user-facing size (zoom level, line widths 2/4px, marker radius, label/
+  legend/title font sizes, paddings, fitBounds padding) is defined for a frame whose long side is
+  `REFERENCE_LONG_SIDE` = 1920px (i.e. the 1080p export)
+- **Preview**: `.map-stage` (fills the map area) → `.map-frame` (letterboxed to the export aspect
+  ratio when `matchVideoFrame`) → `.map-surface` (reference size, e.g. 1920x1080, CSS
+  `transform: scale(displayScale)`) → legend, title, `#map`. Leaflet handles scaled containers
+  for mouse/touch. `--ui-scale` counter-scales Leaflet's zoom buttons/attribution
+- **Export**: `getExportRenderPlan(w, h)` → the map is resized to `mapScale` × reference
+  (`mapScale` = power of two ≥ frame scale: 1 for 720p/1080p, 2 for 4K and 2560x1920), zoom is
+  `zoomLevel + log2(mapScale)` (whole number), and `captureFrame` draws at `drawScale` ≤ 1 into the
+  video canvas. `exportScale` state (= mapScale while exporting, else null) makes Leaflet layers
+  render at that scale and removes the surface's CSS transform
+- `getFitView(bounds, scale)`: fit-all view snapped to a whole reference zoom — used by the preview
+  zoom effect and renderExportFrame so both frame the same area
+- `getLegendLayout(fontSize, scale)`: legend geometry shared by the DOM legend and the canvas legend
 - **Satellite tiles**: ArcGIS World Imagery with `crossOrigin: 'anonymous'` for CORS
 - **Backup tiles**: OpenStreetMap as fallback layer
 - Initial map center configurable via `INITIAL_MAP_CENTER` (default: Oahu, Hawaii)
@@ -178,6 +198,10 @@ All state managed through React useState/useRef hooks:
 - `exportAspectRatio`, `exportResolution`: Export settings
 - `exportDuration`: Video/preview duration in seconds — direct user input (5-300s, default 60)
 - `labelFont`, `labelSize`: Track label styling (preview + export)
+- `legendSize`: legend text size in reference px (10-40, default 13); legend box sizes to content
+- `matchVideoFrame`: letterbox the preview to the export aspect ratio (default true)
+- `stageSize`: measured map-area size (ResizeObserver) used to fit the preview frame
+- `exportScale`: export map scale while exporting, else null (see Frame Scaling)
 - `trackSmoothing`: 'off' | 'light' | 'medium' | 'strong' (default 'light') — Gaussian window radius
   from `SMOOTHING_RADIUS` (0/2/4/8 points); endpoints and timestamps preserved
 - `trimOpenId`: Track whose ✂ Trim sliders are expanded (trim values live on the track objects)
@@ -251,6 +275,9 @@ User-configurable via UI:
 - **Quality**: Low, Medium, High, Ultra (affects bitrate)
 - **Resolution**: Multiple 16:9, 9:16 (vertical), and 4:3 presets (720p to 4K)
 - **Aspect Ratio**: 16:9, 9:16 (vertical - Reels/TikTok/Shorts), or 4:3
+
+Zoom level semantics (v3.2.0): the Zoom slider value is the zoom of the 1920px reference frame;
+the preview and all export resolutions show that same area.
 
 Hardcoded timing values:
 - Tile wait after zoom change: 150ms + up to 2000ms for tile loading
@@ -339,7 +366,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 3.1.0**
+**Current Version: 3.2.0**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -363,6 +390,7 @@ No build process required - single HTML file is the entire app.
 - **v2.6.0**: Track comparison - common-point alignment with radius circle, race-from-point playback
 - **v3.0.0**: Duration input replaces speed slider; example tracks; per-track trimming; label font/size; collapsible sidebar; export ETA + leave warning; FFmpeg.wasm removed
 - **v3.1.0**: Interpolated track heads (smooth motion between GPS fixes); Track Smoothing option
+- **v3.2.0**: WYSIWYG preview (reference-frame scaling, letterboxed preview, exports match preview at any resolution); Legend Size
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which

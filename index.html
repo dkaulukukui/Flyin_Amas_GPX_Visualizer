@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Flyin Amas GPX Track Animator</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Position map tiles without per-tile 3D layers: the preview map is CSS-scaled
+       to fit (see .map-surface), and separately composited tiles show hairline seams -->
+  <script>window.L_DISABLE_3D = true;</script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -83,6 +86,49 @@
     .map-container {
       flex: 1;
       position: relative;
+    }
+
+    /* Map area: the preview frame is centered in it, letterboxed to the export aspect ratio */
+    .map-stage {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #111;
+    }
+
+    .map-frame {
+      position: relative;
+      flex: none;
+      overflow: hidden;
+    }
+
+    .map-frame.framed {
+      outline: 1px solid #444;
+    }
+
+    /* The map renders at the reference frame size (long side 1920px) and is
+       CSS-scaled to fit the preview frame, so it looks exactly like the video */
+    .map-surface {
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform-origin: 0 0;
+    }
+
+    /* Keep Leaflet's zoom buttons and attribution at normal on-screen size */
+    .map-surface .leaflet-top.leaflet-left {
+      transform: scale(var(--ui-scale, 1));
+      transform-origin: top left;
+    }
+
+    .map-surface .leaflet-bottom.leaflet-right {
+      transform: scale(var(--ui-scale, 1));
+      transform-origin: bottom right;
     }
     
     #map {
@@ -405,41 +451,28 @@
       cursor: pointer;
     }
 
+    /* Legend sizes are set inline from getLegendLayout() so the preview matches the export */
     .map-legend {
       position: absolute;
       background: rgba(45, 45, 45, 0.95);
-      padding: 15px;
-      border-radius: 8px;
       z-index: 1000;
-      max-width: 250px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+      pointer-events: none;
     }
 
     .legend-title {
-      font-size: 12px;
       color: #999;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 10px;
       font-weight: 600;
+      white-space: nowrap;
     }
 
     .legend-item {
       display: flex;
       align-items: center;
-      margin-bottom: 8px;
-      font-size: 13px;
-    }
-
-    .legend-item:last-child {
-      margin-bottom: 0;
     }
 
     .legend-color {
-      width: 20px;
-      height: 3px;
-      margin-right: 10px;
-      border-radius: 2px;
+      flex: none;
     }
 
     .legend-label {
@@ -741,17 +774,6 @@
       .control-label {
         font-size: 14px;
         margin-bottom: 10px;
-      }
-
-      /* Make legends and overlays responsive */
-      .map-legend {
-        font-size: 12px;
-        padding: 12px;
-        max-width: 180px;
-      }
-
-      .map-title {
-        font-size: 18px !important;
       }
 
       /* Track list items */
@@ -1059,6 +1081,15 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.2.0 - WYSIWYG preview: the browser preview now matches the exported video exactly. The map renders at a
+    //         reference 1920px-long-side frame (letterboxed to the export aspect ratio, "Show video frame in preview"
+    //         toggle) and is CSS-scaled to fit; every export resolution shows the same area and proportions (zoom
+    //         level, line widths, labels, legend, title) - higher resolutions are just sharper. Previously exports
+    //         showed a much wider area than the preview (map resized to export pixels at the same zoom), with
+    //         overlays shrinking at 4K. Exports render the map at a power-of-two multiple of the reference frame
+    //         (whole-number zoom, native tiles) and downsample into the video. New Legend Size control (10-40px);
+    //         legend box sizes to its content in both preview and export. Leaflet 3D tile positioning disabled
+    //         (L_DISABLE_3D) to avoid tile seams in the scaled preview.
     // 3.1.0 - Smooth track motion: the moving head (line tip, marker, label, and follow camera) is now interpolated
     //         between GPS fixes instead of snapping a whole fix per frame, removing the stutter from frames covering
     //         uneven numbers of fixes. New Track Smoothing option (Off/Light/Medium/Strong, default Light) applies a
@@ -1128,7 +1159,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.1.0";
+    const APP_VERSION = "3.2.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -1193,6 +1224,52 @@
       lon: a.lon + wrapLonDelta(b.lon - a.lon) * t
     });
 
+    // Frame scaling (v3.2.0): all user-facing sizes (zoom level, line widths,
+    // label/legend/title font sizes, paddings) are defined for a reference video
+    // frame whose long side is 1920px (Full HD). The preview shows that frame
+    // CSS-scaled to fit; every export resolution shows the same area and
+    // proportions, just with more or fewer pixels.
+    const REFERENCE_LONG_SIDE = 1920;
+    const getFrameScale = (width, height) => Math.max(width, height) / REFERENCE_LONG_SIDE;
+
+    // How a width x height export is rendered: the Leaflet map is drawn at
+    // mapScale x the reference frame - a power of two, so the zoom offset
+    // log2(mapScale) is a whole number and tiles stay native - then composited
+    // into the video at drawScale (<= 1, i.e. only ever downsampled).
+    // 720p: map 1920x1080 at x0.667; 1080p: 1:1; 4K: map 3840x2160 at 1:1.
+    function getExportRenderPlan(width, height) {
+      const frameScale = getFrameScale(width, height);
+      const mapScale = 2 ** Math.ceil(Math.log2(frameScale) - 1e-9);
+      const drawScale = frameScale / mapScale;
+      return {
+        mapScale,
+        drawScale,
+        mapWidth: Math.round(width / drawScale),
+        mapHeight: Math.round(height / drawScale)
+      };
+    }
+
+    // Legend geometry for a given item font size (reference px) and frame scale.
+    // Shared by the preview DOM legend and the canvas legend in exports so they match.
+    const LEGEND_FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    function getLegendLayout(fontSize, frameScale) {
+      const u = (fontSize / 13) * frameScale; // 13px was the original fixed legend text size
+      return {
+        margin: 20 * frameScale, // distance from the frame edge (independent of legend size)
+        pad: 14 * u,
+        radius: 8 * u,
+        titleFont: 12 * u,
+        titleHeight: 16 * u,
+        titleGap: 8 * u,
+        titleLetterSpacing: 0.5 * u,
+        itemFont: fontSize * frameScale,
+        rowHeight: 22 * u,
+        barWidth: 20 * u,
+        barHeight: 3 * u,
+        barGap: 10 * u
+      };
+    }
+
     // Collapsible sidebar section with a clickable chevron header
     function CollapsibleSection({ title, defaultOpen = true, children }) {
       const [open, setOpen] = useState(defaultOpen);
@@ -1236,6 +1313,10 @@
       const [titleFont, setTitleFont] = useState('Arial');
       const [titleColor, setTitleColor] = useState('#ffffff');
       const [legendPosition, setLegendPosition] = useState('bottom-left');
+      const [legendSize, setLegendSize] = useState(13); // legend text size, reference px
+      const [matchVideoFrame, setMatchVideoFrame] = useState(true); // letterbox preview to export aspect ratio
+      const [stageSize, setStageSize] = useState({ width: 0, height: 0 }); // map area available for the preview
+      const [exportScale, setExportScale] = useState(null); // export map scale (getExportRenderPlan) while exporting, else null
       const [isSidebarOpen, setIsSidebarOpen] = useState(false);
       const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
       const [centeredTrackId, setCenteredTrackId] = useState(null); // null = center on all tracks
@@ -1268,6 +1349,57 @@
         }
       }, [exportAspectRatio]);
 
+      // Preview framing. The Leaflet map (plus legend/title) renders on a
+      // "surface" at the reference frame size - 1920x1080 for a 16:9 video, or
+      // the map area's own aspect when "Show video frame" is off - and is
+      // CSS-scaled by displayScale to fit the map area. The preview is thus the
+      // 1080p export's exact render, at whole-number zoom levels (crisp tiles).
+      // Exports draw Leaflet layers at renderScale = their own frame scale.
+      const stageRef = useRef(null);
+      const [exportResWidth, exportResHeight] = exportResolution.split('x').map(Number);
+      const surfaceSize = (() => {
+        const { width, height } = matchVideoFrame
+          ? { width: exportResWidth, height: exportResHeight }
+          : stageSize;
+        if (!width || !height) return null;
+        const k = REFERENCE_LONG_SIDE / Math.max(width, height);
+        return { width: Math.round(width * k), height: Math.round(height * k) };
+      })();
+      const previewFrame = (() => {
+        const { width, height } = stageSize;
+        if (!surfaceSize || !width || !height) return null;
+        const aspect = surfaceSize.width / surfaceSize.height;
+        return width / height > aspect
+          ? { width: Math.round(height * aspect), height }
+          : { width, height: Math.round(width / aspect) };
+      })();
+      const displayScale = previewFrame ? previewFrame.width / surfaceSize.width : 1;
+      const renderScale = exportScale ?? 1;
+
+      // "Fit all tracks" view for a frame drawn at `scale`: zoom snapped to a
+      // whole reference zoom level so preview and every export show the same area
+      const getFitView = (bounds, scale) => {
+        const pad = 50 * scale;
+        const exactZoom = mapInstanceRef.current.getBoundsZoom(bounds, false, L.point(2 * pad, 2 * pad));
+        const referenceZoom = Math.floor(exactZoom - Math.log2(scale) + 1e-6);
+        return { center: bounds.getCenter(), zoom: referenceZoom + Math.log2(scale) };
+      };
+
+      // Track the size of the map area so the preview frame can be fitted into it
+      useEffect(() => {
+        const el = stageRef.current;
+        if (!el) return;
+        const update = () => setStageSize({ width: el.clientWidth, height: el.clientHeight });
+        update();
+        if (typeof ResizeObserver === 'undefined') {
+          window.addEventListener('resize', update);
+          return () => window.removeEventListener('resize', update);
+        }
+        const observer = new ResizeObserver(update);
+        observer.observe(el);
+        return () => observer.disconnect();
+      }, []);
+
       // Video duration limits (drives both preview pacing and export length)
       const minVideoDuration = 5;
       const maxVideoDuration = 300;
@@ -1281,14 +1413,16 @@
           // Base layer: OpenStreetMap (CORS enabled, always works)
           const osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors',
-            maxZoom: 19,
+            maxNativeZoom: 19,
+            maxZoom: 20,
             crossOrigin: 'anonymous'
           });
 
           // Satellite layer: ESRI World Imagery with CORS
           const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             attribution: 'Esri, DigitalGlobe, GeoEye, Earthstar Geographics',
-            maxZoom: 18,
+            maxNativeZoom: 18,
+            maxZoom: 20, // high-res exports zoom past 18; upscale the last native level
             crossOrigin: 'anonymous'
           });
 
@@ -1866,7 +2000,7 @@
             // Show full track preview with track color at reduced opacity
             const fullLine = L.polyline(
               track.points.map(p => [p.lat, p.lon]),
-              { color: track.color, weight: 2, opacity: 0.3 }
+              { color: track.color, weight: 2 * renderScale, opacity: 0.3 }
             ).addTo(mapInstanceRef.current);
             polylineRefs.current.push(fullLine);
           }
@@ -1874,17 +2008,17 @@
           if (visiblePoints.length > 0) {
             const animatedLine = L.polyline(
               visiblePoints.map(p => [p.lat, p.lon]),
-              { color: track.color, weight: 4, opacity: 0.9 }
+              { color: track.color, weight: 4 * renderScale, opacity: 0.9 }
             ).addTo(mapInstanceRef.current);
             polylineRefs.current.push(animatedLine);
             
             // Add marker at current position
             const lastPoint = visiblePoints[visiblePoints.length - 1];
             const marker = L.circleMarker([lastPoint.lat, lastPoint.lon], {
-              radius: 6,
+              radius: 6 * renderScale,
               fillColor: track.color,
               color: '#fff',
-              weight: 2,
+              weight: 2 * renderScale,
               opacity: 1,
               fillOpacity: 1
             }).addTo(mapInstanceRef.current);
@@ -1894,9 +2028,9 @@
             if (track.label && showLabels) {
               const labelIcon = L.divIcon({
                 className: 'map-label',
-                html: `<div class="map-label" style="color: ${escapeHtml(track.color)}; font-size: ${labelSize}px; font-family: ${escapeHtml(labelFont)}, sans-serif">${escapeHtml(track.label)}</div>`,
+                html: `<div class="map-label" style="color: ${escapeHtml(track.color)}; font-size: ${labelSize * renderScale}px; font-family: ${escapeHtml(labelFont)}, sans-serif">${escapeHtml(track.label)}</div>`,
                 iconSize: null,
-                iconAnchor: [-15, 10]
+                iconAnchor: [-15 * renderScale, 10 * renderScale]
               });
 
               const labelMarker = L.marker([lastPoint.lat, lastPoint.lon], {
@@ -1906,47 +2040,54 @@
             }
           }
         });
-      }, [effectiveTracks, progress, showAllTracks, showLabels, labelFont, labelSize, animationStyle, alignmentActive, alignmentMatches, alignPoint, isPickingPoint]);
+      }, [effectiveTracks, progress, showAllTracks, showLabels, labelFont, labelSize, animationStyle, alignmentActive, alignmentMatches, alignPoint, isPickingPoint, renderScale]);
 
-      // Separate effect for zoom-to-track to prevent interruption during animation
+      // Center of the followed track(s) at the given progress, or null if none visible yet.
+      // Shared by the preview zoom-follow effect and renderExportFrame.
+      const getFollowCenter = (progressPercent) => {
+        const tracksToFollow = centeredTrackId
+          ? effectiveTracks.filter(t => t.id == centeredTrackId) // Use == to handle string/number comparison
+          : effectiveTracks;
+        const positions = [];
+        tracksToFollow.forEach((track) => {
+          const visiblePoints = getVisiblePoints(track, progressPercent);
+          if (visiblePoints.length > 0) {
+            const lastPoint = visiblePoints[visiblePoints.length - 1];
+            positions.push([lastPoint.lat, lastPoint.lon]);
+          }
+        });
+        if (positions.length === 0) return null;
+        return [
+          positions.reduce((sum, pos) => sum + pos[0], 0) / positions.length,
+          positions.reduce((sum, pos) => sum + pos[1], 0) / positions.length
+        ];
+      };
+
+      // Keep Leaflet in sync with the surface size (not while exporting: the
+      // export resizes the map element itself)
       useEffect(() => {
-        if (!mapInstanceRef.current || tracks.length === 0) return;
+        if (!mapInstanceRef.current || exportScale !== null) return;
+        mapInstanceRef.current.invalidateSize();
+      }, [surfaceSize?.width, surfaceSize?.height, exportScale]);
 
-        // Handle zoom to track
+      // Separate effect for zoom-to-track to prevent interruption during animation.
+      // Skipped while exporting - renderExportFrame controls the view then.
+      useEffect(() => {
+        if (!mapInstanceRef.current || tracks.length === 0 || exportScale !== null) return;
+
         if (zoomToTrack && progress > 0 && progress < 100) {
-          // Collect current positions (either from all tracks or just the centered track)
-          const currentPositions = [];
-          const tracksToFollow = centeredTrackId
-            ? effectiveTracks.filter(t => t.id == centeredTrackId) // Use == to handle string/number comparison
-            : effectiveTracks;
-
-          tracksToFollow.forEach((track) => {
-            const visiblePoints = getVisiblePoints(track, progress);
-
-            if (visiblePoints.length > 0) {
-              const lastPoint = visiblePoints[visiblePoints.length - 1];
-              currentPositions.push([lastPoint.lat, lastPoint.lon]);
-            }
-          });
-
-          if (currentPositions.length > 0) {
-            // Calculate center point of all current positions
-            const centerLat = currentPositions.reduce((sum, pos) => sum + pos[0], 0) / currentPositions.length;
-            const centerLon = currentPositions.reduce((sum, pos) => sum + pos[1], 0) / currentPositions.length;
-            // Always use setView with the zoom level for direct control
-            mapInstanceRef.current.setView([centerLat, centerLon], zoomLevel, { animate: false });
+          const center = getFollowCenter(progress);
+          if (center) {
+            mapInstanceRef.current.setView(center, zoomLevel, { animate: false });
           }
         } else if (progress === 0 || progress >= 100) {
           // Zoom out to show all tracks
-          if (tracks.length > 0 && originalBoundsRef.current) {
-            mapInstanceRef.current.fitBounds(originalBoundsRef.current, {
-              padding: [50, 50],
-              animate: true,
-              duration: 0.5
-            });
+          if (originalBoundsRef.current) {
+            const view = getFitView(originalBoundsRef.current, 1);
+            mapInstanceRef.current.setView(view.center, view.zoom, { animate: true });
           }
         }
-      }, [effectiveTracks, progress, animationStyle, zoomToTrack, zoomLevel, centeredTrackId, alignmentActive, alignmentMatches]);
+      }, [effectiveTracks, progress, animationStyle, zoomToTrack, zoomLevel, centeredTrackId, alignmentActive, alignmentMatches, surfaceSize?.width, surfaceSize?.height, exportScale]);
 
       const togglePlay = () => {
         if (tracks.length === 0) return;
@@ -2073,7 +2214,7 @@
       };
 
       // Helper: Draw track polylines directly to canvas (iOS/Safari fix)
-      const drawTracksDirect = (ctx, tracks, progressPercent, mapBounds, canvasWidth, canvasHeight, animStyle, shouldShowAllTracks = true) => {
+      const drawTracksDirect = (ctx, tracks, progressPercent, mapBounds, canvasWidth, canvasHeight, animStyle, shouldShowAllTracks = true, frameScale = 1) => {
         if (!tracks || tracks.length === 0) return;
 
         tracks.forEach(track => {
@@ -2084,7 +2225,7 @@
             ctx.beginPath();
             ctx.strokeStyle = track.color;
             ctx.globalAlpha = 0.3; // Dim opacity for preview
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 2 * frameScale;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
 
@@ -2108,7 +2249,7 @@
           // Draw animated polyline (current progress)
           ctx.beginPath();
           ctx.strokeStyle = track.color;
-          ctx.lineWidth = 4;
+          ctx.lineWidth = 4 * frameScale;
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
 
@@ -2131,18 +2272,18 @@
 
             // Draw outer white circle
             ctx.beginPath();
-            ctx.arc(lastPixel.x, lastPixel.y, 6, 0, 2 * Math.PI);
+            ctx.arc(lastPixel.x, lastPixel.y, 6 * frameScale, 0, 2 * Math.PI);
             ctx.fillStyle = track.color;
             ctx.fill();
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 2 * frameScale;
             ctx.stroke();
           }
         });
       };
 
       // Function to capture a single frame
-      const captureFrame = (mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, titleText, titlePos, titleFontSize, titleFontFamily, titleTextColor, shouldShowLegend, currentTracks, legendPos, currentProgress, currentAnimStyle, mapInstance, shouldShowAllTracks) => {
+      const captureFrame = (mapContainer, compositeCanvas, exportWidth, exportHeight, offsetX, offsetY, scale, sourceWidth, sourceHeight, titleText, titlePos, titleFontSize, titleFontFamily, titleTextColor, shouldShowLegend, currentTracks, legendPos, currentProgress, currentAnimStyle, mapInstance, shouldShowAllTracks, frameScale = 1) => {
         const ctx = compositeCanvas.getContext('2d');
         const currentMapRect = mapContainer.getBoundingClientRect();
 
@@ -2154,6 +2295,8 @@
         ctx.save();
         ctx.translate(offsetX, offsetY);
         ctx.scale(scale, scale);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high'; // the map render is downsampled for sub-1080p exports
 
         // 1. Draw tile images (background map)
         const tileImages = Array.from(mapContainer.querySelectorAll('.leaflet-tile-pane img'));
@@ -2225,7 +2368,7 @@
         if (mapInstance && currentTracks && currentTracks.length > 0) {
           try {
             const mapBounds = mapInstance.getBounds();
-            drawTracksDirect(ctx, currentTracks, currentProgress, mapBounds, sourceWidth, sourceHeight, currentAnimStyle, shouldShowAllTracks);
+            drawTracksDirect(ctx, currentTracks, currentProgress, mapBounds, sourceWidth, sourceHeight, currentAnimStyle, shouldShowAllTracks, frameScale);
           } catch (e) {
             console.warn('Could not draw tracks directly:', e);
           }
@@ -2241,98 +2384,91 @@
             const labelOffsetX = rect.left - currentMapRect.left;
             const labelOffsetY = rect.top - currentMapRect.top;
 
-            ctx.font = `700 ${labelSize}px ${labelFont}, sans-serif`;
+            const scaledLabelSize = labelSize * frameScale;
+            ctx.font = `700 ${scaledLabelSize}px ${labelFont}, sans-serif`;
             ctx.fillStyle = color;
             ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
-            ctx.lineWidth = 4;
+            ctx.lineWidth = 4 * frameScale;
             ctx.lineJoin = 'round';
-            ctx.strokeText(text, labelOffsetX, labelOffsetY + labelSize);
-            ctx.fillText(text, labelOffsetX, labelOffsetY + labelSize);
+            ctx.strokeText(text, labelOffsetX, labelOffsetY + scaledLabelSize);
+            ctx.fillText(text, labelOffsetX, labelOffsetY + scaledLabelSize);
           } catch (e) {
             console.warn('Could not draw label:', e);
           }
         });
 
-        // 4. Draw legend if visible
+        // 4. Draw legend if visible (same geometry as the preview DOM legend)
         if (shouldShowLegend && currentTracks && currentTracks.length > 0) {
+          ctx.save();
           try {
-            // Calculate legend dimensions
-            const legendWidth = 200;
-            const legendHeight = 40 + (currentTracks.length * 25) + 15;
-            const padding = 20;
+            const layout = getLegendLayout(legendSize, frameScale);
+            const supportsLetterSpacing = 'letterSpacing' in ctx;
 
-            // Calculate legend position based on legendPos parameter
-            let legendX, legendY;
-            switch (legendPos) {
-              case 'top-left':
-                legendX = padding;
-                legendY = padding;
-                break;
-              case 'top-right':
-                legendX = sourceWidth - legendWidth - padding;
-                legendY = padding;
-                break;
-              case 'bottom-left':
-                legendX = padding;
-                legendY = sourceHeight - legendHeight - padding;
-                break;
-              case 'bottom-right':
-                legendX = sourceWidth - legendWidth - padding;
-                legendY = sourceHeight - legendHeight - padding;
-                break;
-              default:
-                legendX = padding;
-                legendY = sourceHeight - legendHeight - padding; // default to bottom-left
-            }
+            // Size the box to its content
+            ctx.font = `600 ${layout.titleFont}px ${LEGEND_FONT}`;
+            if (supportsLetterSpacing) ctx.letterSpacing = `${layout.titleLetterSpacing}px`;
+            const titleWidth = ctx.measureText('TRACKS').width + (supportsLetterSpacing ? 0 : 6 * layout.titleLetterSpacing);
+            if (supportsLetterSpacing) ctx.letterSpacing = '0px';
+            ctx.font = `${layout.itemFont}px ${LEGEND_FONT}`;
+            const maxLabelWidth = Math.max(...currentTracks.map(t => ctx.measureText(t.label).width));
+            const legendWidth = 2 * layout.pad + Math.max(titleWidth, layout.barWidth + layout.barGap + maxLabelWidth);
+            const legendHeight = 2 * layout.pad + layout.titleHeight + layout.titleGap + currentTracks.length * layout.rowHeight;
 
-            // Draw legend background
+            const isRight = legendPos === 'top-right' || legendPos === 'bottom-right';
+            const isTop = legendPos === 'top-left' || legendPos === 'top-right';
+            const legendX = isRight ? sourceWidth - legendWidth - layout.margin : layout.margin;
+            const legendY = isTop ? layout.margin : sourceHeight - legendHeight - layout.margin;
+
+            // Background
             ctx.fillStyle = 'rgba(45, 45, 45, 0.95)';
-            ctx.fillRect(legendX, legendY, legendWidth, legendHeight);
+            ctx.beginPath();
+            if (typeof ctx.roundRect === 'function') {
+              ctx.roundRect(legendX, legendY, legendWidth, legendHeight, layout.radius);
+            } else {
+              ctx.rect(legendX, legendY, legendWidth, legendHeight);
+            }
+            ctx.fill();
 
-            // Draw legend border
-            ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(legendX, legendY, legendWidth, legendHeight);
-
-            // Draw legend title
-            ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-            ctx.fillStyle = '#999';
+            // Title
             ctx.textAlign = 'left';
-            ctx.fillText('TRACKS', legendX + 15, legendY + 25);
+            ctx.textBaseline = 'middle';
+            ctx.font = `600 ${layout.titleFont}px ${LEGEND_FONT}`;
+            if (supportsLetterSpacing) ctx.letterSpacing = `${layout.titleLetterSpacing}px`;
+            ctx.fillStyle = '#999';
+            ctx.fillText('TRACKS', legendX + layout.pad, legendY + layout.pad + layout.titleHeight / 2);
+            if (supportsLetterSpacing) ctx.letterSpacing = '0px';
 
-            // Draw legend items from tracks data
+            // Items: color bar + label, vertically centered in each row
+            ctx.font = `${layout.itemFont}px ${LEGEND_FONT}`;
             currentTracks.forEach((track, idx) => {
-              const itemY = legendY + 45 + (idx * 25);
-
-              // Draw color bar
+              const rowCenter = legendY + layout.pad + layout.titleHeight + layout.titleGap + (idx + 0.5) * layout.rowHeight;
               ctx.fillStyle = track.color;
-              ctx.fillRect(legendX + 15, itemY - 5, 20, 3);
-
-              // Draw label text
-              ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+              ctx.fillRect(legendX + layout.pad, rowCenter - layout.barHeight / 2, layout.barWidth, layout.barHeight);
               ctx.fillStyle = '#ffffff';
-              ctx.fillText(track.label, legendX + 45, itemY);
+              ctx.fillText(track.label, legendX + layout.pad + layout.barWidth + layout.barGap, rowCenter);
             });
           } catch (e) {
             console.warn('Could not draw legend:', e);
           }
+          ctx.restore();
         }
 
         // 5. Draw video title if present
         if (titleText && titleText.trim() !== '') {
           try {
-            const padding = 30; // Padding from edges
-            ctx.font = `700 ${titleFontSize}px ${titleFontFamily}`;
+            const padding = 30 * frameScale; // Padding from edges
+            const scaledTitleSize = titleFontSize * frameScale;
+            ctx.font = `700 ${scaledTitleSize}px ${titleFontFamily}`;
             ctx.fillStyle = titleTextColor;
             ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
-            ctx.lineWidth = Math.max(4, titleFontSize / 6);
+            ctx.lineWidth = Math.max(4 * frameScale, scaledTitleSize / 6);
             ctx.lineJoin = 'round';
             ctx.textBaseline = 'top';
 
             // Measure text for positioning
             const textMetrics = ctx.measureText(titleText);
             const textWidth = textMetrics.width;
-            const textHeight = titleFontSize;
+            const textHeight = scaledTitleSize;
 
             let x, y;
 
@@ -2394,6 +2530,7 @@
           mapInstanceRef.current.invalidateSize();
           originalMapSizeRef.current = null;
         }
+        setExportScale(null); // back to the preview's reference-size rendering
       };
 
       // Trigger a download of the finished video blob
@@ -2425,6 +2562,8 @@
       // Shared by both the WebCodecs and MediaRecorder export paths.
       const renderExportFrame = async (frame, totalFrames, mapContainer, compositeCanvas, exportWidth, exportHeight) => {
         const progressValue = (frame / totalFrames) * 100;
+        // Same framing as the preview: sizes and zoom are defined for a 1920px frame
+        const { mapScale, drawScale, mapWidth, mapHeight } = getExportRenderPlan(exportWidth, exportHeight);
         setProgress(progressValue);
         setRenderProgress(progressValue);
 
@@ -2436,26 +2575,10 @@
 
         // Apply zoom-to-track for this frame if enabled
         if (zoomToTrack && progressValue > 0 && progressValue < 100 && mapInstanceRef.current && effectiveTracks.length > 0) {
-          const currentPositions = [];
-          const tracksToFollow = centeredTrackId
-            ? effectiveTracks.filter(t => t.id == centeredTrackId) // Use == to handle string/number comparison
-            : effectiveTracks;
+          const center = getFollowCenter(progressValue);
 
-          tracksToFollow.forEach((track) => {
-            const visiblePoints = getVisiblePoints(track, progressValue);
-
-            if (visiblePoints.length > 0) {
-              const lastPoint = visiblePoints[visiblePoints.length - 1];
-              currentPositions.push([lastPoint.lat, lastPoint.lon]);
-            }
-          });
-
-          if (currentPositions.length > 0) {
-            // Calculate center point of all current positions
-            const centerLat = currentPositions.reduce((sum, pos) => sum + pos[0], 0) / currentPositions.length;
-            const centerLon = currentPositions.reduce((sum, pos) => sum + pos[1], 0) / currentPositions.length;
-            // Always use setView with the zoom level for direct control
-            mapInstanceRef.current.setView([centerLat, centerLon], zoomLevel, { animate: false });
+          if (center) {
+            mapInstanceRef.current.setView(center, zoomLevel + Math.log2(mapScale), { animate: false });
 
             // Force Leaflet to immediately apply the zoom and start loading tiles
             mapInstanceRef.current.invalidateSize(false);
@@ -2470,10 +2593,8 @@
         } else if (progressValue === 0 || progressValue >= 100) {
           // Zoom out to show all tracks at start/end
           if (effectiveTracks.length > 0 && originalBoundsRef.current && mapInstanceRef.current) {
-            mapInstanceRef.current.fitBounds(originalBoundsRef.current, {
-              padding: [50, 50],
-              animate: false
-            });
+            const view = getFitView(originalBoundsRef.current, mapScale);
+            mapInstanceRef.current.setView(view.center, view.zoom, { animate: false });
             // Force Leaflet to immediately apply the zoom
             mapInstanceRef.current.invalidateSize(false);
             mapInstanceRef.current._resetView(mapInstanceRef.current.getCenter(), mapInstanceRef.current.getZoom());
@@ -2492,7 +2613,7 @@
         }
 
         // Render frame to canvas
-        captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, 0, 0, 1, exportWidth, exportHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, effectiveTracks, legendPosition, progressValue, animationStyle, mapInstanceRef.current, showAllTracks);
+        captureFrame(mapContainer, compositeCanvas, exportWidth, exportHeight, 0, 0, drawScale, mapWidth, mapHeight, videoTitle, titlePosition, titleSize, titleFont, titleColor, showLegend, effectiveTracks, legendPosition, progressValue, animationStyle, mapInstanceRef.current, showAllTracks, mapScale);
       };
 
       // Find a supported H.264 encoder configuration for WebCodecs MP4 export.
@@ -2630,9 +2751,15 @@
             height: mapContainer.style.height
           };
 
-          // Resize map container to match export resolution for native tile quality
-          mapContainer.style.width = exportWidth + 'px';
-          mapContainer.style.height = exportHeight + 'px';
+          // Draw Leaflet layers (line widths, markers, labels) at the export map's
+          // scale; this also removes the preview's CSS scaling of the map surface
+          const renderPlan = getExportRenderPlan(exportWidth, exportHeight);
+          setExportScale(renderPlan.mapScale);
+          await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+          // Resize the map to the export render size for native tile quality
+          mapContainer.style.width = renderPlan.mapWidth + 'px';
+          mapContainer.style.height = renderPlan.mapHeight + 'px';
 
           // Force Leaflet to reload tiles at new resolution
           mapInstanceRef.current.invalidateSize();
@@ -2640,17 +2767,6 @@
           // Wait for tiles to load at export resolution
           await new Promise(resolve => setTimeout(resolve, 100));
           await waitForTilesToLoad(mapContainer, 1000);
-
-          // Now map is at export resolution with native tiles loaded
-          const sourceWidth = exportWidth;
-          const sourceHeight = exportHeight;
-
-          // No scaling needed - direct 1:1 capture
-          const scale = 1;
-          const scaledWidth = exportWidth;
-          const scaledHeight = exportHeight;
-          const offsetX = 0;
-          const offsetY = 0;
 
           // Create composite canvas
           const compositeCanvas = document.createElement('canvas');
@@ -2835,12 +2951,7 @@
 
           recorder.onstop = async () => {
             // Restore original map size
-            if (originalMapSizeRef.current) {
-              mapContainer.style.width = originalMapSizeRef.current.width;
-              mapContainer.style.height = originalMapSizeRef.current.height;
-              mapInstanceRef.current.invalidateSize();
-              originalMapSizeRef.current = null;
-            }
+            restoreMapSize(mapContainer);
 
             if (recordedChunksRef.current.length === 0) {
               console.warn('No data recorded');
@@ -3048,13 +3159,7 @@
           alert('Failed to start recording. Error: ' + err.message);
 
           // Restore original map size on error
-          if (originalMapSizeRef.current) {
-            const mapContainer = mapInstanceRef.current.getContainer();
-            mapContainer.style.width = originalMapSizeRef.current.width;
-            mapContainer.style.height = originalMapSizeRef.current.height;
-            mapInstanceRef.current.invalidateSize();
-            originalMapSizeRef.current = null;
-          }
+          restoreMapSize(mapInstanceRef.current.getContainer());
 
           setIsRendering(false);
           setIsRecording(false);
@@ -3508,6 +3613,17 @@
                           <option value="bottom-left">Bottom Left</option>
                           <option value="bottom-right">Bottom Right</option>
                         </select>
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginTop: '8px', marginBottom: '4px' }}>Legend Size: {legendSize}px</label>
+                        <input
+                          type="range"
+                          className="slider"
+                          min="10"
+                          max="40"
+                          step="1"
+                          value={legendSize}
+                          onChange={(e) => setLegendSize(parseInt(e.target.value, 10))}
+                          disabled={isRecording}
+                        />
                       </div>
                     )}
 
@@ -3608,6 +3724,22 @@
                             </>
                           )}
                         </select>
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label className="checkbox-group">
+                          <input
+                            type="checkbox"
+                            className="checkbox"
+                            checked={matchVideoFrame}
+                            onChange={(e) => setMatchVideoFrame(e.target.checked)}
+                            disabled={isRecording}
+                          />
+                          <span>Show video frame in preview</span>
+                        </label>
+                        <p style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
+                          Crops the map to the video's aspect ratio so the preview shows exactly what gets exported.
+                          Every resolution shows the same area; higher ones are just sharper.
+                        </p>
                       </div>
                       <div style={{ marginBottom: '12px' }}>
                         <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Quality</label>
@@ -3842,31 +3974,69 @@
                   </div>
                 </div>
               )}
-              {tracks.length > 0 && showLegend && !isRendering && (
-                <div
-                  className="map-legend"
-                  style={{
-                    ...(() => {
-                      const padding = '20px';
-                      const positions = {
-                        'top-left': { top: padding, left: padding, bottom: 'auto', right: 'auto' },
-                        'top-right': { top: padding, right: padding, bottom: 'auto', left: 'auto' },
-                        'bottom-left': { bottom: padding, left: padding, top: 'auto', right: 'auto' },
-                        'bottom-right': { bottom: padding, right: padding, top: 'auto', left: 'auto' }
-                      };
-                      return positions[legendPosition] || positions['bottom-left'];
-                    })()
-                  }}
-                >
-                  <div className="legend-title">Tracks</div>
-                  {tracks.map(track => (
-                    <div key={track.id} className="legend-item">
-                      <div className="legend-color" style={{ backgroundColor: track.color }}></div>
-                      <div className="legend-label">{track.label}</div>
+              <div className="map-stage" ref={stageRef}>
+              <div
+                className={`map-frame${matchVideoFrame ? ' framed' : ''}`}
+                style={previewFrame
+                  ? { width: `${previewFrame.width}px`, height: `${previewFrame.height}px` }
+                  : { width: '100%', height: '100%' }}
+              >
+              <div
+                className="map-surface"
+                style={{
+                  width: surfaceSize ? `${surfaceSize.width}px` : '100%',
+                  height: surfaceSize ? `${surfaceSize.height}px` : '100%',
+                  transform: exportScale === null ? `scale(${displayScale})` : 'none',
+                  '--ui-scale': 1 / displayScale
+                }}
+              >
+              {tracks.length > 0 && showLegend && !isRendering && (() => {
+                const layout = getLegendLayout(legendSize, 1);
+                const isRight = legendPosition === 'top-right' || legendPosition === 'bottom-right';
+                const isTop = legendPosition === 'top-left' || legendPosition === 'top-right';
+                return (
+                  <div
+                    className="map-legend"
+                    style={{
+                      [isTop ? 'top' : 'bottom']: `${layout.margin}px`,
+                      [isRight ? 'right' : 'left']: `${layout.margin}px`,
+                      padding: `${layout.pad}px`,
+                      borderRadius: `${layout.radius}px`,
+                      fontFamily: LEGEND_FONT
+                    }}
+                  >
+                    <div
+                      className="legend-title"
+                      style={{
+                        fontSize: `${layout.titleFont}px`,
+                        lineHeight: `${layout.titleHeight}px`,
+                        marginBottom: `${layout.titleGap}px`,
+                        letterSpacing: `${layout.titleLetterSpacing}px`
+                      }}
+                    >
+                      Tracks
                     </div>
-                  ))}
-                </div>
-              )}
+                    {tracks.map(track => (
+                      <div
+                        key={track.id}
+                        className="legend-item"
+                        style={{ height: `${layout.rowHeight}px`, fontSize: `${layout.itemFont}px` }}
+                      >
+                        <div
+                          className="legend-color"
+                          style={{
+                            backgroundColor: track.color,
+                            width: `${layout.barWidth}px`,
+                            height: `${layout.barHeight}px`,
+                            marginRight: `${layout.barGap}px`
+                          }}
+                        ></div>
+                        <div className="legend-label">{track.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
               {videoTitle && videoTitle.trim() !== '' && (
                 <div
                   className="map-title"
@@ -3885,6 +4055,7 @@
                       return positions[titlePosition] || positions['top-left'];
                     })(),
                     fontSize: `${titleSize}px`,
+                    lineHeight: 1,
                     fontFamily: titleFont,
                     color: titleColor,
                     fontWeight: '700',
@@ -3898,6 +4069,9 @@
                 </div>
               )}
               <div id="map" ref={mapRef}></div>
+              </div>
+              </div>
+              </div>
             </div>
           </div>
 

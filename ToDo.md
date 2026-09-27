@@ -1,5 +1,14 @@
 To Do List:
 
+## Done in v3.2.0
+
+- ~~allow user in increase font size of legend~~ — Done. Legend Size slider (10-40px) under Show legend.
+- ~~browser playback zoom level doesnt match exported video~~ — Fixed. Every export resolution now
+  shows exactly the area and proportions of the preview (higher resolutions are just sharper).
+- ~~should we adjust browser playback ascpect ratio to match output?~~ — Yes, done. The preview is
+  letterboxed to the export aspect ratio ("Show video frame in preview", on by default) and renders
+  exactly like the exported video.
+
 ## Done in v3.1.0
 
 - ~~add smoothing or interpolation to tracks so that tracks arent jumpy~~ — Done. Track heads are
@@ -39,7 +48,5 @@ To Do List:
 ## Remaining
 
 (nothing queued — add new ideas here)
-- allow user in increase font size of legend
-- browser playback zoom level doesnt match exported video
-- should we adjust browser playback ascpect ratio to match output? sometimes its hard to see what the exportd video will look like this would fix that.
-- add feature to show statistics on screen.  statistics to show:  Timer, Speed, distance between two tracks
+- add feature to show statistics on screen.  statistics to show:  Timer, Speed, total distance, distance between two tracks.  provide standardized customization for these stats: font, size, location.  We need a mechanism to allow the user to place these stats while not cluttering the window or being overly complex.  provide a framework for future stats that arent implemented yet (HR, Strokes per minute, wave counter, flyin ama counter, etc).  For the time/distance stats let the user adjust the actual start point.  
+- Lets consider different user settings layout for bettter usability.
