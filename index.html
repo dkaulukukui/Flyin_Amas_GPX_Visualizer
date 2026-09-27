@@ -1220,6 +1220,11 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.9.1 - Fix the box-shaped lighter/darker area on iPhone whose edge followed the boat (even zoomed out and
+    //         when scrubbing): Leaflet's canvas renderer repaints only the rectangle around changed layers, and iOS
+    //         Safari composited that rectangle differently from the rest of the canvas under the CSS-scaled preview.
+    //         The track canvas now always repaints in full, at 1x resolution instead of 2x "retina" (the preview is
+    //         shown scaled down, so 2x was wasted pixels) - the full repaint costs less than the old partial 2x one.
     // 3.9.0 - Tile prefetch for the follow camera: the "lighter band of tiles ahead of the tracks" on mobile was the
     //         leading edge of the view still downloading - Leaflet only requests tiles once they are on screen. The
     //         follow camera's upcoming views (next 4 s of video) are now downloaded in the background and served
@@ -1342,7 +1347,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.9.0";
+    const APP_VERSION = "3.9.1";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -2038,7 +2043,19 @@
       useEffect(() => {
         // Initialize map
         if (!mapInstanceRef.current) {
-          const map = L.map('map', { preferCanvas: true }).setView(INITIAL_MAP_CENTER, INITIAL_MAP_ZOOM);
+          // Track canvas that always repaints in full. Leaflet normally clears and
+          // repaints only the rectangle around the layers that changed (the path
+          // travelled so far); on iPhone Safari, under the CSS-scaled preview, that
+          // rectangle was composited differently from the rest of the canvas - a
+          // box-shaped darker/lighter area whose edge followed the boat. With no
+          // redraw bounds, Leaflet clears and repaints the whole canvas every time.
+          // The canvas is sized in reference-frame px (the preview shows it scaled
+          // down), so Leaflet's 2x "retina" backing store is wasted pixels to
+          // repaint; 1x is still sharper than any screen shows the preview at
+          L.Browser.retina = false;
+          const trackRenderer = L.canvas();
+          trackRenderer._extendRedrawBounds = () => {}; // keep _redrawBounds null => full repaint
+          const map = L.map('map', { preferCanvas: true, renderer: trackRenderer }).setView(INITIAL_MAP_CENTER, INITIAL_MAP_ZOOM);
           // Lower-right corner belongs to the watermark
           map.attributionControl.setPosition('topright');
 

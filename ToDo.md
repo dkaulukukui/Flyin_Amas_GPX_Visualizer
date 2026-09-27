@@ -1,5 +1,12 @@
 To Do List:
 
+## Done in v3.9.1
+
+- The "lighter band" on mobile was a box-shaped area (screen-aligned edges) whose edge moved with the boat
+  and then slid past it — Leaflet's partial canvas repaint rectangle, composited unevenly by iPhone
+  Safari under the scaled preview (not tiles or imagery; the v3.8.0/v3.9.0 explanations were wrong about
+  this symptom). Fixed by always repainting the whole track canvas (at 1x resolution).
+
 ## Done in v3.9.0
 
 - Moving band of lighter tiles ahead of the tracks on mobile — this was the leading edge of the view still

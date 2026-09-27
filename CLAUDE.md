@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 3.9.0 (as of last update)
+   - Current version: 3.9.1 (as of last update)
 
 ### Key Technical Patterns
 
@@ -55,6 +55,10 @@ The entire application is contained in `index.html` with this organization:
 
 #### Map Rendering (Leaflet Integration)
 - Map initialized with `preferCanvas: true` for better video export
+- **Track canvas renderer (v3.9.1)**: `trackRenderer._extendRedrawBounds = () => {}` makes Leaflet repaint the
+  whole canvas every time. Leaflet's default partial repaint (only the rectangle around changed layers)
+  showed on iPhone Safari as a box-shaped lighter/darker area whose edge followed the boat. `L.Browser.retina
+  = false` keeps the canvas at 1x (the preview is shown scaled down, so 2x only added pixels to repaint)
 - `window.L_DISABLE_3D = true` is set before Leaflet loads (tiles positioned with left/top, not
   per-tile 3D layers) — required for seam-free CSS scaling of the preview; it also forces
   whole-number zoom (Leaflet ignores `zoomSnap` without 3D), which the design relies on
@@ -449,7 +453,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 3.9.0**
+**Current Version: 3.9.1**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -481,6 +485,7 @@ No build process required - single HTML file is the entire app.
 - **v3.7.0**: Map zoom controls set the camera zoom; playback performance work (persistent track layers)
 - **v3.8.0**: Esri Clarity imagery by default (clearer water), Map Imagery choice
 - **v3.9.0**: Tile prefetch along the follow camera's path (preview + export)
+- **v3.9.1**: Track canvas always repaints in full at 1x (fixes box-shaped shading artifact on iPhone Safari)
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which
