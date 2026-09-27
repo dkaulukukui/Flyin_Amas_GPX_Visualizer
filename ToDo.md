@@ -1,5 +1,16 @@
 To Do List:
 
+## Done in v3.7.0
+
+- ~~make the zoom controls on the map adjust the camera zoom setting as well~~ — Done. +/-, mouse wheel,
+  and pinch zoom set the camera Zoom Level while the follow camera is running (range now 10-18).
+- ~~investigate map going white / washed out when zoomed in during playback (mobile)~~ — Investigated:
+  not missing imagery (Esri has real tiles at zoom 18 along the course) and not reproducible in desktop
+  Chrome's phone emulation. Found and fixed heavy per-frame work that starves slow phones (all track
+  layers rebuilt every frame, totals recomputed every frame, full-size scoreboard canvas) and made
+  not-yet-loaded tiles dark instead of light grey. **Needs a re-test on a real phone** — if it still
+  happens, note the phone/browser, zoom level, and whether pausing lets the map fill in.
+
 ## Done in v3.6.0
 
 - Load tracks when the page opens and save/load export settings, combined: project files (tracks + all
@@ -70,5 +81,3 @@ To Do List:
 ## Remaining
 
 (nothing queued — add new ideas here)
-- make the zoom controls on the map adjust the camera zoom setting as well
-- investigate issue where when zoomed in suring playback the map goes all white or white washed like the map tile doesnt have time to load properly.

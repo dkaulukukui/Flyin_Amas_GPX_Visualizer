@@ -179,6 +179,12 @@
       outline: 1px solid #444;
     }
 
+    /* Tiles that are still downloading show this instead of Leaflet's light
+       grey, so a camera moving faster than tiles load doesn't flash white */
+    .leaflet-container {
+      background: #1a1a1a;
+    }
+
     /* The map renders at the reference frame size (long side 1920px) and is
        CSS-scaled to fit the preview frame, so it looks exactly like the video */
     .map-surface {
@@ -604,11 +610,8 @@
 
     /* Preview legend/scoreboard overlay (drawn by drawScoreboard, same as the export) */
     .map-scoreboard {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+      position: absolute; /* sized and positioned to the panel by the redraw effect */
+      display: none;
       z-index: 1000;
       pointer-events: none;
     }
@@ -1217,6 +1220,12 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.7.0 - Map zoom controls (+/-, wheel, pinch) now set the camera Zoom Level while the follow camera is running
+    //         (previously undone on the next frame); range widened to 10-18. Playback performance (mobile "white
+    //         map" investigation): track layers are created once and moved each frame instead of rebuilt (~10k
+    //         points re-projected per frame), sidebar totals memoized, scoreboard overlay canvas sized to the panel
+    //         instead of the whole surface; dark map background so tiles still downloading don't flash white. In a
+    //         6x-CPU-throttled phone emulation: frames over 100 ms dropped from 175 to 13 per 7 s of playback.
     // 3.6.0 - Projects, presets & links: "Save project" (Tracks tab) downloads one .json with the tracks (embedded
     //         points, labels, colors, trims), every setting, and per-video state (title, stats start, gap/centered
     //         tracks, alignment) - opening it (button or drop on the upload zone) reproduces the exact video. Without
@@ -1321,12 +1330,17 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.6.0";
+    const APP_VERSION = "3.7.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
     const INITIAL_MAP_CENTER = [21.284, -157.718];
     const INITIAL_MAP_ZOOM = 13;
+
+    // Camera (follow) zoom range: the Zoom Level slider, and map +/- / wheel /
+    // pinch zooms while the follow camera is active, stay within this
+    const ZOOM_LEVEL_MIN = 10;
+    const ZOOM_LEVEL_MAX = 18; // highest native satellite imagery level
 
     // Haversine distance between two {lat, lon} points in kilometers
     function getDistance(p1, p2) {
@@ -1698,7 +1712,10 @@
       const mapRef = useRef(null);
       const mapInstanceRef = useRef(null);
       const animationFrameRef = useRef(null);
-      const polylineRefs = useRef([]);
+      const programmaticViewRef = useRef(0); // >0 while the app itself moves the map
+      const followCameraActiveRef = useRef(false); // follow camera in charge (see zoomend handler)
+      const previewLayersRef = useRef([]); // full-track preview polylines
+      const animatedLayersRef = useRef(new Map()); // track id -> { line, marker, label, styleKey, labelKey }
       const mediaRecorderRef = useRef(null);
       const recordedChunksRef = useRef([]);
       const originalBoundsRef = useRef(null);
@@ -1986,6 +2003,24 @@
           // Lower-right corner belongs to the watermark
           map.attributionControl.setPosition('topright');
 
+          // Zooming the map yourself (+/- buttons, wheel, pinch) while the follow
+          // camera is running sets the camera zoom, instead of being undone on
+          // the next frame. The app's own view changes are ignored.
+          map.on('zoomend', () => {
+            if (programmaticViewRef.current > 0 || !followCameraActiveRef.current) return;
+            const zoom = Math.round(map.getZoom());
+            const clamped = Math.min(ZOOM_LEVEL_MAX, Math.max(ZOOM_LEVEL_MIN, zoom));
+            setZoomLevel(clamped);
+            if (clamped !== zoom) {
+              programmaticViewRef.current++;
+              try {
+                map.setView(map.getCenter(), clamped, { animate: false });
+              } finally {
+                programmaticViewRef.current--;
+              }
+            }
+          });
+
           // Use CORS-enabled satellite tiles from multiple sources layered
           // Base layer: OpenStreetMap (CORS enabled, always works)
           const osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -2144,10 +2179,21 @@
         fitMapToTracks(newTracks);
       };
 
+      // Run a view change made by the app (not the user), so the zoomend
+      // handler doesn't treat it as the user choosing a camera zoom
+      const moveMapProgrammatically = (move) => {
+        programmaticViewRef.current++;
+        try {
+          move();
+        } finally {
+          programmaticViewRef.current--;
+        }
+      };
+
       const fitMapToTracks = (someTracks) => {
         const allPoints = someTracks.flatMap(t => t.points.map(p => [p.lat, p.lon]));
         if (allPoints.length > 0 && mapInstanceRef.current) {
-          mapInstanceRef.current.fitBounds(L.latLngBounds(allPoints), { padding: [50, 50] });
+          moveMapProgrammatically(() => mapInstanceRef.current.fitBounds(L.latLngBounds(allPoints), { padding: [50, 50] }));
         }
       };
 
@@ -2598,7 +2644,7 @@
       // `bottomReserve` keeps a bottom-right panel above the watermark.
       const drawScoreboard = (ctx, frameWidth, frameHeight, scale, progressPercent, bottomReserve) => {
         const rows = effectiveTracks;
-        if (rows.length === 0) return;
+        if (rows.length === 0) return null;
         const layout = getLegendLayout(legendSize, scale);
         const stats = computeScoreboardStats(progressPercent);
         const raceDefs = activeStats.filter(d => d.scope === 'race');
@@ -2737,19 +2783,51 @@
           });
         }
         ctx.restore();
+        return { x: x0, y: y0, width: panelWidth, height: panelHeight };
       };
 
-      // Redraw the preview legend/scoreboard overlay after every render (cheap:
-      // one small panel). It lives on the reference-size surface, so it is
-      // drawn at scale 1 and CSS-scaled with the map.
+      // Redraw the preview legend/scoreboard overlay after every render. It lives
+      // on the reference-size surface (drawn at scale 1, CSS-scaled with the map).
+      // The panel is drawn on an off-screen surface-size canvas and only its
+      // bounds are copied into the visible canvas, which is sized and positioned
+      // to the panel - a full-surface visible canvas changing every frame was
+      // expensive to composite on phones.
       const scoreboardCanvasRef = useRef(null);
+      const scoreboardScratchRef = useRef(null);
       useEffect(() => {
         const canvas = scoreboardCanvasRef.current;
         if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (!showLegend || isRendering || effectiveTracks.length === 0) return;
-        drawScoreboard(ctx, canvas.width, canvas.height, 1, progress, bottomRightReserve);
+        const hide = () => { canvas.style.display = 'none'; };
+        if (!showLegend || isRendering || effectiveTracks.length === 0 || !surfaceSize) return hide();
+
+        let scratch = scoreboardScratchRef.current;
+        if (!scratch) scratch = scoreboardScratchRef.current = document.createElement('canvas');
+        if (scratch.width !== surfaceSize.width || scratch.height !== surfaceSize.height) {
+          scratch.width = surfaceSize.width;
+          scratch.height = surfaceSize.height;
+        }
+        const scratchCtx = scratch.getContext('2d');
+        scratchCtx.clearRect(0, 0, scratch.width, scratch.height);
+        const bounds = drawScoreboard(scratchCtx, scratch.width, scratch.height, 1, progress, bottomRightReserve);
+        if (!bounds) return hide();
+
+        const x = Math.max(0, Math.floor(bounds.x));
+        const y = Math.max(0, Math.floor(bounds.y));
+        const w = Math.min(scratch.width - x, Math.ceil(bounds.x + bounds.width) - x);
+        const h = Math.min(scratch.height - y, Math.ceil(bounds.y + bounds.height) - y);
+        if (w <= 0 || h <= 0) return hide();
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+        } else {
+          canvas.getContext('2d').clearRect(0, 0, w, h);
+        }
+        canvas.getContext('2d').drawImage(scratch, x, y, w, h, 0, 0, w, h);
+        canvas.style.left = `${x}px`;
+        canvas.style.top = `${y}px`;
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+        canvas.style.display = 'block';
       });
 
       const animate = (timestamp) => {
@@ -2949,69 +3027,111 @@
         }
       }, [effectiveTracks]);
 
+      // Track layers on the map. They are created once and then only moved each
+      // frame (setLatLngs / setLatLng): rebuilding every layer on every frame
+      // re-projected ~10k points per frame and starved slow phones of the time
+      // needed to load and paint map tiles.
+
+      // Full-track previews: rebuilt only when tracks or preview visibility change
       useEffect(() => {
-        // Clear existing polylines
-        polylineRefs.current.forEach(line => {
-          if (line && mapInstanceRef.current) {
-            mapInstanceRef.current.removeLayer(line);
-          }
-        });
-        polylineRefs.current = [];
-        
-        if (!mapInstanceRef.current || tracks.length === 0) return;
-        
+        const map = mapInstanceRef.current;
+        previewLayersRef.current.forEach(layer => map && map.removeLayer(layer));
+        previewLayersRef.current = [];
+        if (!map) return;
+
         // While picking/configuring the common point, always show full previews
         // so the user can see the overlaid tracks to click on
         const forcePreview = isPickingPoint || (alignPoint && !alignmentActive);
+        if (!showAllTracks && !forcePreview) return;
 
-        effectiveTracks.forEach((track, trackIndex) => {
+        effectiveTracks.forEach(track => {
+          const preview = L.polyline(
+            track.points.map(p => [p.lat, p.lon]),
+            { color: track.color, weight: 2 * renderScale, opacity: 0.3 }
+          ).addTo(map);
+          preview.bringToBack(); // keep previews under the animated lines and markers
+          previewLayersRef.current.push(preview);
+        });
+      }, [effectiveTracks, showAllTracks, isPickingPoint, alignPoint, alignmentActive, renderScale]);
+
+      // Animated line, position marker, and label per track: moved every frame,
+      // recreated only when their style (color, scale, label text/font) changes
+      useEffect(() => {
+        const map = mapInstanceRef.current;
+        if (!map) return;
+        const layersByTrack = animatedLayersRef.current;
+        const removeEntry = (entry) => {
+          ['line', 'marker', 'label'].forEach(key => entry[key] && map.removeLayer(entry[key]));
+        };
+        const visibleIds = new Set();
+
+        effectiveTracks.forEach(track => {
           const visiblePoints = getVisiblePoints(track, progress);
-
-          if (showAllTracks || forcePreview) {
-            // Show full track preview with track color at reduced opacity
-            const fullLine = L.polyline(
-              track.points.map(p => [p.lat, p.lon]),
-              { color: track.color, weight: 2 * renderScale, opacity: 0.3 }
-            ).addTo(mapInstanceRef.current);
-            polylineRefs.current.push(fullLine);
+          let entry = layersByTrack.get(track.id);
+          if (visiblePoints.length === 0) {
+            if (entry) {
+              removeEntry(entry);
+              layersByTrack.delete(track.id);
+            }
+            return;
           }
-          
-          if (visiblePoints.length > 0) {
-            const animatedLine = L.polyline(
-              visiblePoints.map(p => [p.lat, p.lon]),
-              { color: track.color, weight: 4 * renderScale, opacity: 0.9 }
-            ).addTo(mapInstanceRef.current);
-            polylineRefs.current.push(animatedLine);
-            
-            // Add marker at current position
-            const lastPoint = visiblePoints[visiblePoints.length - 1];
-            const marker = L.circleMarker([lastPoint.lat, lastPoint.lon], {
+          visibleIds.add(track.id);
+          const latlngs = visiblePoints.map(p => [p.lat, p.lon]);
+          const head = latlngs[latlngs.length - 1];
+          if (!entry) {
+            entry = {};
+            layersByTrack.set(track.id, entry);
+          }
+
+          const styleKey = `${track.color}|${renderScale}`;
+          if (entry.styleKey !== styleKey) {
+            if (entry.line) map.removeLayer(entry.line);
+            if (entry.marker) map.removeLayer(entry.marker);
+            entry.line = L.polyline(latlngs, { color: track.color, weight: 4 * renderScale, opacity: 0.9 }).addTo(map);
+            entry.marker = L.circleMarker(head, {
               radius: 6 * renderScale,
               fillColor: track.color,
               color: '#fff',
               weight: 2 * renderScale,
               opacity: 1,
               fillOpacity: 1
-            }).addTo(mapInstanceRef.current);
-            polylineRefs.current.push(marker);
-            
-            // Add label that follows the current position
-            if (track.label && showLabels) {
-              const labelIcon = L.divIcon({
-                className: 'map-label',
-                html: `<div class="map-label" style="color: ${escapeHtml(track.color)}; font-size: ${labelSize * renderScale}px; font-family: ${escapeHtml(labelFont)}, sans-serif">${escapeHtml(track.label)}</div>`,
-                iconSize: null,
-                iconAnchor: [-15 * renderScale, 10 * renderScale]
-              });
+            }).addTo(map);
+            entry.styleKey = styleKey;
+          } else {
+            entry.line.setLatLngs(latlngs);
+            entry.marker.setLatLng(head);
+          }
 
-              const labelMarker = L.marker([lastPoint.lat, lastPoint.lon], {
-                icon: labelIcon
-              }).addTo(mapInstanceRef.current);
-              polylineRefs.current.push(labelMarker);
-            }
+          // Label that follows the current position
+          const labelKey = track.label && showLabels
+            ? `${track.label}|${track.color}|${labelFont}|${labelSize}|${renderScale}`
+            : null;
+          if (entry.labelKey !== labelKey) {
+            if (entry.label) map.removeLayer(entry.label);
+            entry.label = labelKey
+              ? L.marker(head, {
+                  icon: L.divIcon({
+                    className: 'map-label',
+                    html: `<div class="map-label" style="color: ${escapeHtml(track.color)}; font-size: ${labelSize * renderScale}px; font-family: ${escapeHtml(labelFont)}, sans-serif">${escapeHtml(track.label)}</div>`,
+                    iconSize: null,
+                    iconAnchor: [-15 * renderScale, 10 * renderScale]
+                  })
+                }).addTo(map)
+              : null;
+            entry.labelKey = labelKey;
+          } else if (entry.label) {
+            entry.label.setLatLng(head);
           }
         });
-      }, [effectiveTracks, progress, showAllTracks, showLabels, labelFont, labelSize, animationStyle, alignmentActive, alignmentMatches, alignPoint, isPickingPoint, renderScale]);
+
+        // Drop layers of tracks that were removed or aren't visible now
+        for (const [id, entry] of layersByTrack) {
+          if (!visibleIds.has(id)) {
+            removeEntry(entry);
+            layersByTrack.delete(id);
+          }
+        }
+      }, [effectiveTracks, progress, showLabels, labelFont, labelSize, animationStyle, alignmentActive, alignmentMatches, renderScale]);
 
       // Center of the followed track(s) at the given progress, or null if none visible yet.
       // Shared by the preview zoom-follow effect and renderExportFrame.
@@ -3041,6 +3161,8 @@
         mapInstanceRef.current.invalidateSize();
       }, [surfaceSize?.width, surfaceSize?.height, exportScale]);
 
+      followCameraActiveRef.current = zoomToTrack && progress > 0 && progress < 100 && exportScale === null;
+
       // Separate effect for zoom-to-track to prevent interruption during animation.
       // Skipped while exporting - renderExportFrame controls the view then.
       useEffect(() => {
@@ -3049,13 +3171,13 @@
         if (zoomToTrack && progress > 0 && progress < 100) {
           const center = getFollowCenter(progress);
           if (center) {
-            mapInstanceRef.current.setView(center, zoomLevel, { animate: false });
+            moveMapProgrammatically(() => mapInstanceRef.current.setView(center, zoomLevel, { animate: false }));
           }
         } else if (progress === 0 || progress >= 100) {
           // Zoom out to show all tracks
           if (originalBoundsRef.current) {
             const view = getFitView(originalBoundsRef.current, 1);
-            mapInstanceRef.current.setView(view.center, view.zoom, { animate: true });
+            moveMapProgrammatically(() => mapInstanceRef.current.setView(view.center, view.zoom, { animate: true }));
           }
         }
       }, [effectiveTracks, progress, animationStyle, zoomToTrack, zoomLevel, centeredTrackId, alignmentActive, alignmentMatches, surfaceSize?.width, surfaceSize?.height, exportScale]);
@@ -4127,16 +4249,11 @@
         compositeCanvasRef.current = null;
       };
 
-      const totalPoints = effectiveTracks.reduce((sum, t) => sum + t.points.length, 0);
-      const totalDistance = effectiveTracks.reduce((sum, track) => {
-        let dist = 0;
-        for (let i = 1; i < track.points.length; i++) {
-          const p1 = track.points[i - 1];
-          const p2 = track.points[i];
-          dist += getDistance(p1, p2);
-        }
-        return sum + dist;
-      }, 0);
+      // Sidebar totals (memoized - this component re-renders every playback frame)
+      const { totalPoints, totalDistance } = useMemo(() => ({
+        totalPoints: effectiveTracks.reduce((sum, t) => sum + t.points.length, 0),
+        totalDistance: effectiveTracks.reduce((sum, t) => sum + (t.cumDistM[t.cumDistM.length - 1] || 0) / 1000, 0) // km
+      }), [effectiveTracks]);
 
       return (
         <>
@@ -4602,8 +4719,8 @@
                                 <input
                                   type="range"
                                   className="slider"
-                                  min="12"
-                                  max="18"
+                                  min={ZOOM_LEVEL_MIN}
+                                  max={ZOOM_LEVEL_MAX}
                                   step="1"
                                   value={zoomLevel}
                                   onChange={(e) => setZoomLevel(parseInt(e.target.value))}
@@ -5124,13 +5241,7 @@
                 }}
               >
               {/* Legend / scoreboard: drawn by drawScoreboard, like the export */}
-              <canvas
-                ref={scoreboardCanvasRef}
-                className="map-scoreboard"
-                width={surfaceSize ? surfaceSize.width : 0}
-                height={surfaceSize ? surfaceSize.height : 0}
-                style={{ display: isRendering ? 'none' : 'block' }}
-              />
+              <canvas ref={scoreboardCanvasRef} className="map-scoreboard" />
               {videoTitle && videoTitle.trim() !== '' && (
                 <div
                   className="map-title"

@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 3.6.0 (as of last update)
+   - Current version: 3.7.0 (as of last update)
 
 ### Key Technical Patterns
 
@@ -78,7 +78,18 @@ The entire application is contained in `index.html` with this organization:
 - **Satellite tiles**: ArcGIS World Imagery with `crossOrigin: 'anonymous'` for CORS
 - **Backup tiles**: OpenStreetMap as fallback layer
 - Initial map center configurable via `INITIAL_MAP_CENTER` (default: Oahu, Hawaii)
-- Polylines drawn using Leaflet canvas renderer
+- Polylines drawn using Leaflet canvas renderer. **Track layers are persistent (v3.7.0)**: full-track
+  previews are rebuilt only when tracks/visibility/scale change (`previewLayersRef`); each track's
+  animated line, marker, and label live in `animatedLayersRef` and are moved per frame with
+  `setLatLngs`/`setLatLng`, recreated only when their style key changes. Don't go back to
+  remove-and-re-add per frame — it starved phones of time to load tiles
+- **Camera zoom sync (v3.7.0)**: a `zoomend` handler turns user zooms (+/-, wheel, pinch) into
+  `zoomLevel` while `followCameraActiveRef` is true (zoom-to-track on, 0 < progress < 100, not
+  exporting), clamped to `ZOOM_LEVEL_MIN`..`ZOOM_LEVEL_MAX`. **Wrap any app-initiated view change in
+  `moveMapProgrammatically(...)`** so it isn't mistaken for a user zoom
+- The preview scoreboard canvas is sized/positioned to the panel (drawn on an off-screen scratch
+  canvas via `drawScoreboard`, which returns the panel bounds); `.leaflet-container` background is dark
+  so tiles still downloading don't flash white
 - Labels positioned at current track positions using custom DOM markers (`.map-label`)
 - Legend rendered as absolute-positioned overlay (`.map-legend`)
 
@@ -431,7 +442,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 3.6.0**
+**Current Version: 3.7.0**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -460,6 +471,7 @@ No build process required - single HTML file is the entire app.
 - **v3.4.0**: Scoreboard & stats (timer, speed, distance, HR, stroke rate, gap) with a stats registry
 - **v3.5.0**: Tabbed sidebar (Tracks/Camera/Overlays/Export), transport bar under the preview, remembered settings
 - **v3.6.0**: Project files (tracks + settings), settings presets, ?project= / ?gpx= startup links
+- **v3.7.0**: Map zoom controls set the camera zoom; playback performance work (persistent track layers)
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which
