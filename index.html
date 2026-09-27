@@ -1232,6 +1232,11 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.13.1 - Faster exports (~2x: 5 s / 1080p at zoom 17 went 42 s -> 22 s): removed the fixed 150 ms pause per frame
+    //          (one animation frame + the existing tile-load poll is enough - Leaflet creates the tile images during
+    //          setView); captureFrame no longer copies Leaflet's track canvas (drawTracksDirect draws the tracks; the
+    //          per-frame pixel readback of a large canvas is slow on Safari); track lines/markers/previews are removed
+    //          from the map while exporting (labels kept - captureFrame reads them) so the big canvas isn't repainted.
     // 3.13.0 - Leaderboard overlay (Overlays tab): place a finish point on the map and a separate panel ranks all
     //          tracks by straight-line distance to it, re-ordering live. A track that arrives within the finish radius
     //          (after having been outside it, from the stats start on) is locked in by finish time (scoreboard clock).
@@ -1384,7 +1389,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.13.0";
+    const APP_VERSION = "3.13.1";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -3398,6 +3403,10 @@
         previewLayersRef.current = [];
         if (!map) return;
 
+        // Not needed while exporting (drawTracksDirect draws the video's tracks),
+        // and repainting them every frame slowed exports on phones
+        if (exportScale !== null) return;
+
         // While picking/configuring the common point, always show full previews
         // so the user can see the overlaid tracks to click on
         const forcePreview = isPickingPoint || isPickingFinish || (alignPoint && !alignmentActive);
@@ -3411,7 +3420,7 @@
           preview.bringToBack(); // keep previews under the animated lines and markers
           previewLayersRef.current.push(preview);
         });
-      }, [effectiveTracks, showAllTracks, isPickingPoint, isPickingFinish, alignPoint, alignmentActive, renderScale]);
+      }, [effectiveTracks, showAllTracks, isPickingPoint, isPickingFinish, alignPoint, alignmentActive, renderScale, exportScale]);
 
       // Animated line, position marker, and label per track: moved every frame,
       // recreated only when their style (color, scale, label text/font) changes
@@ -3442,23 +3451,31 @@
             layersByTrack.set(track.id, entry);
           }
 
-          const styleKey = `${track.color}|${renderScale}`;
-          if (entry.styleKey !== styleKey) {
+          if (exportScale !== null) {
+            // Exporting: drawTracksDirect draws lines and markers; keep only the label
             if (entry.line) map.removeLayer(entry.line);
             if (entry.marker) map.removeLayer(entry.marker);
-            entry.line = L.polyline(latlngs, { color: track.color, weight: 4 * renderScale, opacity: 0.9 }).addTo(map);
-            entry.marker = L.circleMarker(head, {
-              radius: 6 * renderScale,
-              fillColor: track.color,
-              color: '#fff',
-              weight: 2 * renderScale,
-              opacity: 1,
-              fillOpacity: 1
-            }).addTo(map);
-            entry.styleKey = styleKey;
+            entry.line = entry.marker = null;
+            entry.styleKey = null;
           } else {
-            entry.line.setLatLngs(latlngs);
-            entry.marker.setLatLng(head);
+            const styleKey = `${track.color}|${renderScale}`;
+            if (entry.styleKey !== styleKey) {
+              if (entry.line) map.removeLayer(entry.line);
+              if (entry.marker) map.removeLayer(entry.marker);
+              entry.line = L.polyline(latlngs, { color: track.color, weight: 4 * renderScale, opacity: 0.9 }).addTo(map);
+              entry.marker = L.circleMarker(head, {
+                radius: 6 * renderScale,
+                fillColor: track.color,
+                color: '#fff',
+                weight: 2 * renderScale,
+                opacity: 1,
+                fillOpacity: 1
+              }).addTo(map);
+              entry.styleKey = styleKey;
+            } else {
+              entry.line.setLatLngs(latlngs);
+              entry.marker.setLatLng(head);
+            }
           }
 
           // Label that follows the current position
@@ -3490,7 +3507,7 @@
             layersByTrack.delete(id);
           }
         }
-      }, [effectiveTracks, progress, showLabels, labelFont, labelSize, animationStyle, alignmentActive, alignmentMatches, renderScale]);
+      }, [effectiveTracks, progress, showLabels, labelFont, labelSize, animationStyle, alignmentActive, alignmentMatches, renderScale, exportScale]);
 
       // Center of the followed track(s) at the given progress, or null if none visible yet.
       // Shared by the preview zoom-follow effect and renderExportFrame.
@@ -3841,49 +3858,12 @@
           ctx.fillRect(0, 0, sourceWidth, sourceHeight);
         }
 
-        // 2. Draw canvas layers (tracks, markers)
-        const currentCanvases = Array.from(mapContainer.querySelectorAll('canvas'));
-        let canvasesDrawn = 0;
-        let canvasesSkipped = 0;
+        // 2. Tracks, markers, and previews are drawn directly (drawTracksDirect)
+        // rather than copied from Leaflet's track canvas: the copy was redundant
+        // and reading pixels back from a large canvas every frame is slow on
+        // Safari. The Leaflet track layers are even removed while exporting.
 
-        currentCanvases.forEach((canvas, idx) => {
-          if (canvas.width > 0 && canvas.height > 0) {
-            try {
-              const rect = canvas.getBoundingClientRect();
-              const canvasOffsetX = rect.left - currentMapRect.left;
-              const canvasOffsetY = rect.top - currentMapRect.top;
-
-              // Check if canvas has content (not blank)
-              const testCtx = canvas.getContext('2d');
-              const imageData = testCtx.getImageData(0, 0, Math.min(canvas.width, 10), Math.min(canvas.height, 10));
-              let hasPixels = false;
-              for (let i = 3; i < imageData.data.length; i += 4) {
-                if (imageData.data[i] > 0) {
-                  hasPixels = true;
-                  break;
-                }
-              }
-
-              if (hasPixels) {
-                ctx.drawImage(canvas, canvasOffsetX, canvasOffsetY);
-                canvasesDrawn++;
-              } else {
-                canvasesSkipped++;
-              }
-            } catch (e) {
-              console.warn('Could not draw canvas:', e);
-            }
-          }
-        });
-
-        // Debug: log canvas rendering info (iOS troubleshooting)
-        if (canvasesDrawn === 0 && currentCanvases.length > 0) {
-          console.warn(`⚠️ Warning: Found ${currentCanvases.length} canvases but none had content. Tracks may not appear in video.`);
-          console.log('→ Using direct track rendering fallback (iOS/Safari fix)');
-        }
-
-        // 2b. Draw tracks directly (iOS/Safari fallback - bypasses Leaflet canvas)
-        // This ensures tracks always appear even if Leaflet's canvas renderer fails
+        // 2b. Draw tracks directly
         if (mapInstance && currentTracks && currentTracks.length > 0) {
           try {
             const mapBounds = mapInstance.getBounds();
@@ -4112,10 +4092,12 @@
             mapInstanceRef.current.invalidateSize(false);
             mapInstanceRef.current._resetView(mapInstanceRef.current.getCenter(), mapInstanceRef.current.getZoom());
 
-            // Always wait for tiles when zoom-to-track is enabled (position changes every frame)
+            // Wait for this view's tiles (position changes every frame). Leaflet creates
+            // the tile images during setView, so one frame for layout, then poll until
+            // they have loaded - no fixed delay (a 150 ms pause per frame used to add
+            // ~22 s to a 5 s / 30 fps export)
             zoomChanged = true;
-            // Wait for zoom and tiles to ensure proper rendering
-            await new Promise(resolve => setTimeout(resolve, 150));
+            await new Promise(resolve => requestAnimationFrame(resolve));
             await waitForTilesToLoad(mapContainer, 2000);
           }
         } else if (progressValue === 0 || progressValue >= 100) {
@@ -4127,10 +4109,9 @@
             mapInstanceRef.current.invalidateSize(false);
             mapInstanceRef.current._resetView(mapInstanceRef.current.getCenter(), mapInstanceRef.current.getZoom());
 
-            // Always wait for tiles at start/end (zoom changes)
+            // Wait for tiles at start/end (zoom changes): one frame, then the tile poll
             zoomChanged = true;
-            // Wait for zoom and tiles
-            await new Promise(resolve => setTimeout(resolve, 150));
+            await new Promise(resolve => requestAnimationFrame(resolve));
             await waitForTilesToLoad(mapContainer, 2000);
           }
         }

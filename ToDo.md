@@ -1,5 +1,11 @@
 To Do List:
 
+## Done in v3.13.1
+
+- Exports felt slower on the phone: exports are now ~2x faster everywhere (5 s / 1080p at zoom 17: 42 s ->
+  22 s). Removed a fixed 150 ms pause per frame, the per-frame readback of Leaflet's track canvas (slow on
+  Safari; the export draws tracks itself), and the track-layer repaints during export.
+
 ## Done in v3.13.0
 
 - Leaderboard overlay: place a finish point; a separate panel ranks tracks by distance to it and re-orders

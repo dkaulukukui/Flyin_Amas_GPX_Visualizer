@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 3.13.0 (as of last update)
+   - Current version: 3.13.1 (as of last update)
 
 ### Key Technical Patterns
 
@@ -237,7 +237,10 @@ If neither path is available (very old iOS), an alert with screen-recording inst
 **Shared helpers**:
 - `renderExportFrame(frame, totalFrames, ...)`: sets progress, applies zoom-to-track, waits for tiles
   (`waitForTilesToLoad`), composites via `captureFrame` — used by both export paths
-- `captureFrame(...)`: draws composite frame: map tiles → tracks → labels → legend → video title
+- `captureFrame(...)`: draws composite frame: map tiles → tracks (`drawTracksDirect`) → finish flag → labels →
+  scoreboard → leaderboard → video title → watermark. It does NOT copy Leaflet's track canvas (v3.13.1: the
+  per-frame readback was slow on Safari), and track lines/markers/previews are removed from the map while
+  exporting (`exportScale !== null`); labels stay because `captureFrame` reads their DOM positions
 - `drawTracksDirect(...)`: bypasses Leaflet canvas renderer for reliability (iOS/Safari fix);
   draws tracks, markers, and previews directly to the export canvas
 - `restoreMapSize` / `downloadVideoBlob` / `finishExport`: cleanup helpers
@@ -389,7 +392,7 @@ Zoom level semantics (v3.2.0): the Zoom slider value is the zoom of the 1920px r
 the preview and all export resolutions show that same area.
 
 Hardcoded timing values:
-- Tile wait after zoom change: 150ms + up to 2000ms for tile loading
+- Tile wait per frame: one animation frame, then poll until all tiles have loaded (max 2000ms) — no fixed pause (v3.13.1)
 - WebCodecs frame timestamps: `frame * round(1e6 / targetFPS)` microseconds
 - Keyframe interval (WebCodecs): every 2 seconds (`targetFPS * 2` frames)
 
@@ -454,7 +457,7 @@ Primary brand color `#fc4c02` used for:
 - Test with single track to isolate performance
 
 **Export too slow**:
-- Each frame waits for tiles when zoom changes (150ms + up to 2000ms)
+- Each frame waits until its tiles have loaded (up to 2000ms); tile prefetch (v3.9.0) hides most of that
 - Disable "Zoom to Track" to speed up export (no zoom changes = no tile waits)
 - Consider lower FPS for faster exports
 
@@ -475,7 +478,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 3.13.0**
+**Current Version: 3.13.1**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -514,6 +517,7 @@ No build process required - single HTML file is the entire app.
 - **v3.11.1**: Only the tile pane on its own compositing layer; temporary `?debug=` switches (overlay, markers, canvas)
 - **v3.12.0**: Canvas track renderer + tile-pane layer, confirmed clean on iPhone; switches removed
 - **v3.13.0**: Leaderboard overlay (finish point, live ranking, finish lock-in, finish flag)
+- **v3.13.1**: ~2x faster exports (no fixed per-frame pause, no Leaflet canvas readback, track layers off while exporting)
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which
