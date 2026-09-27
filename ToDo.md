@@ -1,5 +1,10 @@
 To Do List:
 
+## Done in v3.15.0
+
+- Leaderboard gap trend arrows: red up chevrons when falling behind the leader, green down when catching up,
+  1-3 chevrons by rate (0.1 / 0.3 / 0.6 m/s over the last 30 s of race time); toggleable.
+
 ## Done in v3.14.0
 
 - Leaderboard shows each racing track's gap to the leader (leader "—", others e.g. "-0.50 mi") instead of

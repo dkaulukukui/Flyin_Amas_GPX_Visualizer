@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 3.14.0 (as of last update)
+   - Current version: 3.15.0 (as of last update)
 
 ### Key Technical Patterns
 
@@ -190,6 +190,11 @@ Interpolation only happens between adjacent timed fixes; uses precomputed `track
   `getRaceClockAtTrackTime`, shown `⚑ h:mm:ss` in gold), then unfinished by straight-line distance to the
   finish, then not-yet-started ("—"). Racing tracks display their **gap to the leader** in distance to go
   (`-0.50 mi` / `-640 ft`, stats units; a finished leader counts as 0 to go); the leader shows "—"
+- Gap trend arrows (`showGapTrend`, default on): each racing non-leader row gets `row.trend` = ±1..3 from the
+  change of its gap to the *current* leader over the last `GAP_TREND_WINDOW_MS` (30 s) of race time, thresholds
+  `GAP_TREND_THRESHOLDS` (0.1/0.3/0.6 m/s, tuned on the example race). `drawTrendArrow` draws red up / green
+  down chevrons in a fixed-width column. None for the leader, finished tracks, once the leader has finished,
+  or without a race clock (sequential / untimed)
 - `drawLeaderboard(ctx, w, h, scale, progress, { avoid, bottomReserve })` draws the panel for both the preview
   (`leaderboardCanvasRef`, via the shared panel scratch/blit effect) and `captureFrame`; when it shares a corner
   with the scoreboard it stacks beside it (`avoid` = scoreboard bounds)
@@ -479,7 +484,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 3.14.0**
+**Current Version: 3.15.0**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -520,6 +525,7 @@ No build process required - single HTML file is the entire app.
 - **v3.13.0**: Leaderboard overlay (finish point, live ranking, finish lock-in, finish flag)
 - **v3.13.1**: ~2x faster exports (no fixed per-frame pause, no Leaflet canvas readback, track layers off while exporting)
 - **v3.14.0**: Leaderboard shows gap to the leader instead of distance to the finish
+- **v3.15.0**: Leaderboard gap trend arrows (red up = falling behind, green down = catching up, 1-3 chevrons)
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which
