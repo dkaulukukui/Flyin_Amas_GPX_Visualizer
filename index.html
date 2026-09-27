@@ -126,9 +126,9 @@
       transform-origin: top left;
     }
 
-    .map-surface .leaflet-bottom.leaflet-right {
+    .map-surface .leaflet-top.leaflet-right {
       transform: scale(var(--ui-scale, 1));
-      transform-origin: bottom right;
+      transform-origin: top right;
     }
     
     #map {
@@ -449,6 +449,18 @@
       width: 18px;
       height: 18px;
       cursor: pointer;
+    }
+
+    /* Sizes set inline from getWatermarkLayout() so the preview matches the export */
+    .map-watermark {
+      position: absolute;
+      z-index: 1000;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-weight: 600;
+      white-space: nowrap;
+      text-shadow: 0 0 3px rgba(0, 0, 0, 0.7);
+      pointer-events: none;
     }
 
     /* Legend sizes are set inline from getLegendLayout() so the preview matches the export */
@@ -1081,6 +1093,11 @@
 
     // VERSION: Increment this with every change (major.minor.patch)
     // Change log:
+    // 3.3.0 - Branding: "FlyinAmas" is the default video title while the example tracks are shown (replaced by the
+    //         track date on the first upload unless the user typed a title). New watermark in the lower-right corner,
+    //         "Made at Flyinamas.com" by default - on by default, with customizable text, size (default 12px) and
+    //         opacity (default 50%); a bottom-right legend/title is lifted above it. Default text sizes raised two
+    //         slider steps: labels 14->16px, legend 13->15px, title 24->28px. Leaflet attribution moved to top-right.
     // 3.2.0 - WYSIWYG preview: the browser preview now matches the exported video exactly. The map renders at a
     //         reference 1920px-long-side frame (letterboxed to the export aspect ratio, "Show video frame in preview"
     //         toggle) and is CSS-scaled to fit; every export resolution shows the same area and proportions (zoom
@@ -1159,7 +1176,7 @@
     // 1.2.1 - Optimized video rendering frame rate, added version number display
     // 1.2.0 - Added frame-by-frame rendering with tile loading
     // 1.1.0 - Added export settings and improved video quality
-    const APP_VERSION = "3.2.0";
+    const APP_VERSION = "3.3.0";
 
     // CONFIGURABLE: Initial map center when no tracks are loaded
     // Default: Oahu, Hawaii [latitude, longitude]
@@ -1252,6 +1269,20 @@
     // Legend geometry for a given item font size (reference px) and frame scale.
     // Shared by the preview DOM legend and the canvas legend in exports so they match.
     const LEGEND_FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+    // Video title shown with the bundled example tracks; replaced by the track
+    // date on the user's first upload unless they've typed their own title
+    const DEFAULT_VIDEO_TITLE = 'FlyinAmas';
+    const DEFAULT_WATERMARK_TEXT = 'Made at Flyinamas.com';
+
+    // Watermark geometry (lower-right corner) for a font size in reference px.
+    // `reserve` is the height it occupies from the bottom edge, so a legend or
+    // title also placed bottom-right is lifted above it. Shared by preview and export.
+    function getWatermarkLayout(fontSize, frameScale) {
+      const margin = 16 * frameScale;
+      const lineHeight = fontSize * 1.25 * frameScale;
+      return { font: fontSize * frameScale, margin, lineHeight, reserve: margin + lineHeight + 8 * frameScale };
+    }
     function getLegendLayout(fontSize, frameScale) {
       const u = (fontSize / 13) * frameScale; // 13px was the original fixed legend text size
       return {
@@ -1293,7 +1324,7 @@
       const [trackSmoothing, setTrackSmoothing] = useState('light'); // key of SMOOTHING_RADIUS
       const [showLabels, setShowLabels] = useState(true);
       const [labelFont, setLabelFont] = useState('Arial');
-      const [labelSize, setLabelSize] = useState(14); // px
+      const [labelSize, setLabelSize] = useState(16); // px
       const [showLegend, setShowLegend] = useState(true);
       const [animationStyle, setAnimationStyle] = useState('simultaneous');
       const [zoomToTrack, setZoomToTrack] = useState(true);
@@ -1307,13 +1338,17 @@
       const [isRendering, setIsRendering] = useState(false);
       const [renderProgress, setRenderProgress] = useState(0);
       const [exportFormat, setExportFormat] = useState('');
-      const [videoTitle, setVideoTitle] = useState('');
+      const [videoTitle, setVideoTitle] = useState(DEFAULT_VIDEO_TITLE);
       const [titlePosition, setTitlePosition] = useState('top-center');
-      const [titleSize, setTitleSize] = useState(24);
+      const [titleSize, setTitleSize] = useState(28);
       const [titleFont, setTitleFont] = useState('Arial');
       const [titleColor, setTitleColor] = useState('#ffffff');
       const [legendPosition, setLegendPosition] = useState('bottom-left');
-      const [legendSize, setLegendSize] = useState(13); // legend text size, reference px
+      const [legendSize, setLegendSize] = useState(15); // legend text size, reference px
+      const [showWatermark, setShowWatermark] = useState(true);
+      const [watermarkText, setWatermarkText] = useState(DEFAULT_WATERMARK_TEXT);
+      const [watermarkSize, setWatermarkSize] = useState(12); // reference px, smaller than other text
+      const [watermarkOpacity, setWatermarkOpacity] = useState(50); // percent
       const [matchVideoFrame, setMatchVideoFrame] = useState(true); // letterbox preview to export aspect ratio
       const [stageSize, setStageSize] = useState({ width: 0, height: 0 }); // map area available for the preview
       const [exportScale, setExportScale] = useState(null); // export map scale (getExportRenderPlan) while exporting, else null
@@ -1374,6 +1409,11 @@
           : { width, height: Math.round(width / aspect) };
       })();
       const displayScale = previewFrame ? previewFrame.width / surfaceSize.width : 1;
+
+      // Preview watermark (reference px, like the rest of the surface)
+      const hasWatermark = showWatermark && watermarkText.trim() !== '';
+      const watermarkLayout = getWatermarkLayout(watermarkSize, 1);
+      const bottomRightReserve = hasWatermark ? watermarkLayout.reserve : 0;
       const renderScale = exportScale ?? 1;
 
       // "Fit all tracks" view for a frame drawn at `scale`: zoom snapped to a
@@ -1408,6 +1448,8 @@
         // Initialize map
         if (!mapInstanceRef.current) {
           const map = L.map('map', { preferCanvas: true }).setView(INITIAL_MAP_CENTER, INITIAL_MAP_ZOOM);
+          // Lower-right corner belongs to the watermark
+          map.attributionControl.setPosition('topright');
 
           // Use CORS-enabled satellite tiles from multiple sources layered
           // Base layer: OpenStreetMap (CORS enabled, always works)
@@ -1552,8 +1594,9 @@
               // The user's own uploads replace the bundled example tracks
               const base = prev.filter(t => !t.isExample);
 
-              // Auto-populate title with date from first track
-              if (base.length === 0 && track.startTime && !videoTitle) {
+              // Auto-populate title with date from first track (replacing the
+              // example "FlyinAmas" title, but never a title the user typed)
+              if (base.length === 0 && track.startTime && (!videoTitle || videoTitle === DEFAULT_VIDEO_TITLE)) {
                 const date = new Date(track.startTime);
                 setVideoTitle(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
               }
@@ -2397,6 +2440,11 @@
           }
         });
 
+        // Space kept clear in the lower-right corner for the watermark
+        const hasWatermark = showWatermark && watermarkText.trim() !== '';
+        const watermarkLayout = getWatermarkLayout(watermarkSize, frameScale);
+        const bottomRightReserve = hasWatermark ? watermarkLayout.reserve : 0;
+
         // 4. Draw legend if visible (same geometry as the preview DOM legend)
         if (shouldShowLegend && currentTracks && currentTracks.length > 0) {
           ctx.save();
@@ -2417,7 +2465,8 @@
             const isRight = legendPos === 'top-right' || legendPos === 'bottom-right';
             const isTop = legendPos === 'top-left' || legendPos === 'top-right';
             const legendX = isRight ? sourceWidth - legendWidth - layout.margin : layout.margin;
-            const legendY = isTop ? layout.margin : sourceHeight - legendHeight - layout.margin;
+            const bottomMargin = isRight ? Math.max(layout.margin, bottomRightReserve) : layout.margin;
+            const legendY = isTop ? layout.margin : sourceHeight - legendHeight - bottomMargin;
 
             // Background
             ctx.fillStyle = 'rgba(45, 45, 45, 0.95)';
@@ -2501,7 +2550,7 @@
                 break;
               case 'bottom-right':
                 x = sourceWidth - padding;
-                y = sourceHeight - padding - textHeight;
+                y = sourceHeight - Math.max(padding, bottomRightReserve) - textHeight;
                 ctx.textAlign = 'right';
                 break;
               default:
@@ -2516,6 +2565,28 @@
           } catch (e) {
             console.warn('Could not draw title:', e);
           }
+        }
+
+        // 6. Draw watermark (lower-right, semi-transparent; matches the preview)
+        if (hasWatermark) {
+          ctx.save();
+          try {
+            ctx.globalAlpha = watermarkOpacity / 100;
+            ctx.font = `600 ${watermarkLayout.font}px ${LEGEND_FONT}`;
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+            ctx.shadowBlur = 3 * frameScale;
+            ctx.fillText(
+              watermarkText,
+              sourceWidth - watermarkLayout.margin,
+              sourceHeight - watermarkLayout.margin - watermarkLayout.lineHeight / 2
+            );
+          } catch (e) {
+            console.warn('Could not draw watermark:', e);
+          }
+          ctx.restore();
         }
 
         // Restore context
@@ -3632,6 +3703,56 @@
                         <input
                           type="checkbox"
                           className="checkbox"
+                          checked={showWatermark}
+                          onChange={(e) => setShowWatermark(e.target.checked)}
+                          disabled={isRecording}
+                        />
+                        <span>Show watermark</span>
+                      </label>
+                    </div>
+
+                    {showWatermark && (
+                      <div style={{ marginBottom: '12px', marginLeft: '24px' }}>
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Watermark Text</label>
+                        <input
+                          type="text"
+                          className="select"
+                          value={watermarkText}
+                          onChange={(e) => setWatermarkText(e.target.value)}
+                          placeholder={DEFAULT_WATERMARK_TEXT}
+                          disabled={isRecording}
+                          style={{ width: '100%', fontFamily: 'inherit', marginBottom: '8px' }}
+                        />
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginBottom: '4px' }}>Watermark Size: {watermarkSize}px</label>
+                        <input
+                          type="range"
+                          className="slider"
+                          min="8"
+                          max="32"
+                          step="1"
+                          value={watermarkSize}
+                          onChange={(e) => setWatermarkSize(parseInt(e.target.value, 10))}
+                          disabled={isRecording}
+                        />
+                        <label style={{ fontSize: '12px', color: '#999', display: 'block', marginTop: '8px', marginBottom: '4px' }}>Watermark Opacity: {watermarkOpacity}%</label>
+                        <input
+                          type="range"
+                          className="slider"
+                          min="10"
+                          max="100"
+                          step="5"
+                          value={watermarkOpacity}
+                          onChange={(e) => setWatermarkOpacity(parseInt(e.target.value, 10))}
+                          disabled={isRecording}
+                        />
+                      </div>
+                    )}
+
+                    <div className="control-group">
+                      <label className="checkbox-group">
+                        <input
+                          type="checkbox"
+                          className="checkbox"
                           checked={zoomToTrack}
                           onChange={(e) => setZoomToTrack(e.target.checked)}
                         />
@@ -3994,11 +4115,12 @@
                 const layout = getLegendLayout(legendSize, 1);
                 const isRight = legendPosition === 'top-right' || legendPosition === 'bottom-right';
                 const isTop = legendPosition === 'top-left' || legendPosition === 'top-right';
+                const edgeMargin = !isTop && isRight ? Math.max(layout.margin, bottomRightReserve) : layout.margin;
                 return (
                   <div
                     className="map-legend"
                     style={{
-                      [isTop ? 'top' : 'bottom']: `${layout.margin}px`,
+                      [isTop ? 'top' : 'bottom']: `${edgeMargin}px`,
                       [isRight ? 'right' : 'left']: `${layout.margin}px`,
                       padding: `${layout.pad}px`,
                       borderRadius: `${layout.radius}px`,
@@ -4050,7 +4172,7 @@
                         'top-right': { top: padding, right: padding },
                         'bottom-left': { bottom: padding, left: padding },
                         'bottom-center': { bottom: padding, left: '50%', transform: 'translateX(-50%)' },
-                        'bottom-right': { bottom: padding, right: padding }
+                        'bottom-right': { bottom: `${Math.max(30, bottomRightReserve)}px`, right: padding }
                       };
                       return positions[titlePosition] || positions['top-left'];
                     })(),
@@ -4066,6 +4188,20 @@
                   }}
                 >
                   {videoTitle}
+                </div>
+              )}
+              {hasWatermark && (
+                <div
+                  className="map-watermark"
+                  style={{
+                    right: `${watermarkLayout.margin}px`,
+                    bottom: `${watermarkLayout.margin}px`,
+                    fontSize: `${watermarkLayout.font}px`,
+                    lineHeight: `${watermarkLayout.lineHeight}px`,
+                    opacity: watermarkOpacity / 100
+                  }}
+                >
+                  {watermarkText}
                 </div>
               )}
               <div id="map" ref={mapRef}></div>

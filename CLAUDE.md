@@ -28,7 +28,7 @@ The entire application is contained in `index.html` with this organization:
    - `APP_VERSION` constant with comprehensive changelog comments
    - **CRITICAL**: Increment version number when making changes
    - Format: `major.minor.patch` (semantic versioning)
-   - Current version: 3.2.0 (as of last update)
+   - Current version: 3.3.0 (as of last update)
 
 ### Key Technical Patterns
 
@@ -197,8 +197,12 @@ All state managed through React useState/useRef hooks:
   (Leaflet circle + match markers are removed during export — preferCanvas would bake them into frames)
 - `exportAspectRatio`, `exportResolution`: Export settings
 - `exportDuration`: Video/preview duration in seconds — direct user input (5-300s, default 60)
-- `labelFont`, `labelSize`: Track label styling (preview + export)
-- `legendSize`: legend text size in reference px (10-40, default 13); legend box sizes to content
+- `labelFont`, `labelSize`: Track label styling (preview + export), labelSize default 16
+- `legendSize`: legend text size in reference px (10-40, default 15); legend box sizes to content
+- `showWatermark`, `watermarkText`, `watermarkSize`, `watermarkOpacity`: lower-right watermark (default on,
+  `DEFAULT_WATERMARK_TEXT` "Made at Flyinamas.com", 12px, 50%). Geometry from `getWatermarkLayout()`
+  (shared by the DOM `.map-watermark` and `captureFrame`); its `reserve` lifts a bottom-right legend/title
+  above it. Leaflet's attribution sits top-right to keep the corner clear
 - `matchVideoFrame`: letterbox the preview to the export aspect ratio (default true)
 - `stageSize`: measured map-area size (ResizeObserver) used to fit the preview frame
 - `exportScale`: export map scale while exporting, else null (see Frame Scaling)
@@ -208,7 +212,9 @@ All state managed through React useState/useRef hooks:
 - `exportFPS`: Target frame rate (15-60 FPS, default 30 FPS)
 - `exportQuality`: Video quality preset ('low', 'medium', 'high', 'ultra')
 - `exportFormat`: Current export format ('MP4', 'WebM (VP9)', 'WebM (VP8)')
-- `videoTitle`, `titlePosition`, `titleSize`, `titleFont`, `titleColor`: Video title customization
+- `videoTitle`, `titlePosition`, `titleSize`, `titleFont`, `titleColor`: Video title customization.
+  `videoTitle` starts as `DEFAULT_VIDEO_TITLE` ("FlyinAmas") for the example tracks; the first upload
+  replaces it with the track date unless the user changed it. titleSize default 28
 
 **Refs** (useRef):
 - `mapInstanceRef`: Leaflet map instance
@@ -366,7 +372,7 @@ No build process required - single HTML file is the entire app.
 
 ## Version History & Key Milestones
 
-**Current Version: 3.2.0**
+**Current Version: 3.3.0**
 
 ### Major Achievements
 - ✅ **MP4 Export Everywhere (v2.4.0)**: WebCodecs single-pass export produces real MP4 on desktop and mobile (incl. iOS 16.4+/Android)
@@ -391,6 +397,7 @@ No build process required - single HTML file is the entire app.
 - **v3.0.0**: Duration input replaces speed slider; example tracks; per-track trimming; label font/size; collapsible sidebar; export ETA + leave warning; FFmpeg.wasm removed
 - **v3.1.0**: Interpolated track heads (smooth motion between GPS fixes); Track Smoothing option
 - **v3.2.0**: WYSIWYG preview (reference-frame scaling, letterboxed preview, exports match preview at any resolution); Legend Size
+- **v3.3.0**: "FlyinAmas" default title; lower-right watermark (text/size/opacity); larger default text sizes
 
 ### Key Learning
 The MediaRecorder API requires frames at **consistent time intervals** to produce correct FPS, which
